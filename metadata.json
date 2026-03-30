@@ -1,0 +1,5 @@
+{
+  "name": "DropShip Pro",
+  "description": "Automated dropshipping platform with product importing, markup management, and fulfillment simulation.",
+  "requestFramePermissions": ["geolocation"]
+}
