@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: products
+    // Document ID: productId
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required)
+    //   - description: string
+    //   - features: list
+    //   - price: number (required)
+    //   - sourceCurrency: string (required)
+    //   - image: string (required)
+    //   - gallery: list
+    //   - sourceUrl: string (required)
+    //   - markup: number (required)
+    //   - status: string (required, 'pending' | 'approved')
+    //   - variations: list
+    //   - verificationLogs: list
+    //   - shippingInfo: string
+    //
+    // Collection: orders
+    // Document ID: orderId
+    // Fields:
+    //   - id: string (required)
+    //   - items: list (required)
+    //   - customer: map (required)
+    //   - total: number (required)
+    //   - currency: string (required)
+    //   - status: string (required)
+    //   - automationStatus: string
+    //   - automationLog: list
+    //   - createdAt: string (required)
+    //   - stripeSessionId: string
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "mr.dummy3719@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasOnly(['id', 'title', 'description', 'features', 'price', 'sourceCurrency', 'image', 'gallery', 'sourceUrl', 'markup', 'status', 'variations', 'verificationLogs', 'shippingInfo', 'isVerified']) &&
+             data.keys().hasAll(['id', 'title', 'price', 'sourceCurrency', 'image', 'sourceUrl', 'markup', 'status']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+             data.price is number && data.price >= 0 &&
+             data.markup is number && data.markup >= 0 &&
+             data.status in ['pending', 'approved'] &&
+             data.sourceUrl is string && data.sourceUrl.size() < 2000 &&
+             data.image is string && data.image.size() < 2000;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasOnly(['id', 'items', 'customer', 'total', 'currency', 'status', 'automationStatus', 'automationLog', 'createdAt', 'stripeSessionId']) &&
+             data.keys().hasAll(['id', 'items', 'customer', 'total', 'currency', 'status', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.total is number && data.total >= 0 &&
+             data.status in ['pending', 'paid', 'fulfilled', 'shipped', 'delivered', 'cancelled'] &&
+             data.customer is map &&
+             data.customer.email is string &&
+             data.items is list && data.items.size() > 0 && data.items.size() < 50;
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidProduct(request.resource.data);
+      allow update: if isAdmin() && isValidProduct(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.customer.email == request.auth.token.email);
+      allow create: if isAuthenticated() && isValidOrder(request.resource.data) && request.resource.data.customer.email == request.auth.token.email;
+      allow update: if isAdmin() && isValidOrder(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() && request.auth.uid == userId && request.resource.data.role == 'user';
+      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == userId && request.resource.data.role == resource.data.role);
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

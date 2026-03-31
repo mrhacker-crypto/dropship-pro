@@ -1,10 +1,116 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, CheckCircle2, Loader2, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Product, CartItem, CustomerInfo, Order, ExchangeRates } from './types';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer } from 'firebase/firestore';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { db, auth, googleProvider } from './firebase';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<any, any> {
+  constructor(props: any) {
+    super(props);
+    (this as any).state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    const state = (this as any).state;
+    const props = (this as any).props;
+    if (state.hasError) {
+      let message = "Something went wrong.";
+      try {
+        const errObj = JSON.parse(state.error?.message || '{}');
+        if (errObj.error && errObj.error.includes("Missing or insufficient permissions")) {
+          message = "You don't have permission to perform this action. Please make sure you are logged in as an admin.";
+        }
+      } catch (e) {
+        // Not a JSON error
+      }
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
+          <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Application Error</h2>
+            <p className="text-gray-600 mb-6">{message}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold hover:bg-indigo-700 transition-colors"
+            >
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return props.children;
+  }
+}
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -40,7 +146,7 @@ const AutomationLogView = ({ logs }: { logs?: string[] }) => {
   
   const analyzeLog = (log: string) => {
     const l = log.toLowerCase();
-    if (l.includes('error') || l.includes('failed')) return { color: 'text-red-400', fix: 'Check Kikuu credentials/balance.' };
+    if (l.includes('error') || l.includes('failed')) return { color: 'text-red-400', fix: 'Check supplier credentials/balance.' };
     if (l.includes('timeout')) return { color: 'text-yellow-400', fix: 'Network issue. Retrying...' };
     if (l.includes('rejected')) return { color: 'text-red-400', fix: 'Source rejected order. Manual check needed.' };
     return { color: 'text-indigo-300', fix: null };
@@ -130,17 +236,26 @@ const ProductModal = ({
   product, 
   onClose, 
   addToCart, 
+  onConfirm,
   currency, 
-  rates 
+  rates,
+  isAdmin
 }: { 
   product: Product; 
   onClose: () => void; 
-  addToCart: (p: Product, selectedVariations?: { [key: string]: string }, quantity?: number) => void;
+  addToCart?: (p: Product, selectedVariations?: { [key: string]: string }, quantity?: number) => void;
+  onConfirm?: (p: Product) => void;
   currency: string;
   rates: ExchangeRates;
+  isAdmin?: boolean;
 }) => {
   const [selectedVariations, setSelectedVariations] = useState<{ [key: string]: string }>({});
   const [quantity, setQuantity] = useState(1);
+  const [currentImage, setCurrentImage] = useState(product.image);
+
+  useEffect(() => {
+    setCurrentImage(product.image);
+  }, [product.image]);
 
   useEffect(() => {
     if (product.variations) {
@@ -169,7 +284,7 @@ const ProductModal = ({
       >
         <div className="md:w-1/2 h-64 md:h-auto relative bg-gray-50">
           <img 
-            src={product.image} 
+            src={currentImage} 
             alt={product.title} 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
@@ -247,12 +362,22 @@ const ProductModal = ({
                                     )}
                                   >
                                     {opt.image ? (
-                                      <div className={cn(
-                                        "w-14 h-14 rounded-xl overflow-hidden border-2 transition-all",
-                                        selectedVariations[v.name] === opt.name 
-                                          ? "border-indigo-600 shadow-md" 
-                                          : "border-transparent"
-                                      )}>
+                                      <div 
+                                        className={cn(
+                                          "w-14 h-14 rounded-xl overflow-hidden border-2 transition-all",
+                                          onConfirm ? "cursor-pointer hover:border-indigo-600" : "border-transparent",
+                                          onConfirm && currentImage === opt.image ? "border-indigo-600 shadow-md" : "border-transparent",
+                                          selectedVariations[v.name] === opt.name && !onConfirm ? "border-indigo-600 shadow-md" : ""
+                                        )}
+                                        onClick={(e) => {
+                                          if (onConfirm) {
+                                            e.stopPropagation();
+                                            setCurrentImage(opt.image!);
+                                          } else {
+                                            setSelectedVariations(prev => ({ ...prev, [v.name]: opt.name }));
+                                          }
+                                        }}
+                                      >
                                         <img src={opt.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                       </div>
                                     ) : (
@@ -300,8 +425,26 @@ const ProductModal = ({
                 </h4>
                 <div className="grid grid-cols-5 gap-2">
                   {product.gallery.map((img, i) => (
-                    <div key={i} className="aspect-square rounded-lg overflow-hidden border border-gray-100">
+                    <div 
+                      key={i} 
+                      className={cn(
+                        "aspect-square rounded-lg overflow-hidden border transition-all relative group",
+                        onConfirm ? "cursor-pointer hover:border-indigo-600" : "border-gray-100",
+                        onConfirm && currentImage === img ? "border-indigo-600 ring-2 ring-indigo-600/20" : ""
+                      )}
+                      onClick={() => onConfirm && setCurrentImage(img)}
+                    >
                       <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      {onConfirm && (
+                        <div className={cn(
+                          "absolute inset-0 bg-indigo-600/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity",
+                          currentImage === img && "opacity-100"
+                        )}>
+                          <div className="bg-white/90 p-1 rounded-full shadow-sm">
+                            <Check className="w-3 h-3 text-indigo-600" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -335,24 +478,36 @@ const ProductModal = ({
           </div>
 
           <div className="mt-12 pt-8 border-t border-gray-100">
-            <button
-              onClick={() => {
-                addToCart(product, selectedVariations, quantity);
-                onClose();
-              }}
-              className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-gray-200"
-            >
-              <Plus className="w-5 h-5" />
-              Add to Cart
-            </button>
-            <a 
-              href={product.sourceUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="block text-center mt-4 text-xs font-bold text-gray-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
-            >
-              View Original Source
-            </a>
+            {onConfirm ? (
+              <button
+                onClick={() => onConfirm({ ...product, image: currentImage })}
+                className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-3"
+              >
+                <Check className="w-5 h-5" />
+                Confirm Import
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  addToCart?.(product, selectedVariations, quantity);
+                  onClose();
+                }}
+                className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-gray-200"
+              >
+                <Plus className="w-5 h-5" />
+                Add to Cart
+              </button>
+            )}
+            {isAdmin && (
+              <a 
+                href={product.sourceUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-center mt-4 text-xs font-bold text-gray-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
+              >
+                View Original Source
+              </a>
+            )}
           </div>
         </div>
       </motion.div>
@@ -365,52 +520,96 @@ const Navbar = ({
   isAdmin, 
   currency, 
   setCurrency, 
-  rates 
+  rates,
+  user
 }: { 
   cartCount: number; 
   isAdmin: boolean;
   currency: string;
   setCurrency: (c: string) => void;
   rates: ExchangeRates;
-}) => (
-  <nav className="border-b border-gray-200 bg-white sticky top-0 z-50">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="flex justify-between h-16 items-center">
-        <Link to="/" className="flex items-center gap-2">
-          <Package className="w-8 h-8 text-indigo-600" />
-          <span className="text-xl font-bold tracking-tight text-gray-900">DropShip Pro</span>
-        </Link>
-        <div className="flex items-center gap-6">
-          <select 
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {Object.keys(rates).length > 0 ? (
-              Object.keys(rates).sort().map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))
-            ) : (
-              <option value="USD">USD</option>
-            )}
-          </select>
-          <Link to="/" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Store</Link>
-          <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Admin</Link>
-          {!isAdmin && (
-            <Link to="/cart" className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors">
-              <ShoppingCart className="w-6 h-6" />
-              {cartCount > 0 && (
-                <span className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {cartCount}
-                </span>
+  user: User | null;
+}) => {
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  return (
+    <nav className="border-b border-gray-200 bg-white sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16 items-center">
+          <Link to="/" className="flex items-center gap-2">
+            <Package className="w-8 h-8 text-indigo-600" />
+            <span className="text-xl font-bold tracking-tight text-gray-900">DropShip Pro</span>
+          </Link>
+          <div className="flex items-center gap-6">
+            <select 
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {Object.keys(rates).length > 0 ? (
+                Object.keys(rates).sort().map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))
+              ) : (
+                <option value="USD">USD</option>
               )}
-            </Link>
-          )}
+            </select>
+            <Link to="/" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Store</Link>
+            <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Admin</Link>
+            
+            {user ? (
+              <div className="flex items-center gap-3">
+                {user.photoURL && (
+                  <img src={user.photoURL} alt={user.displayName || ""} className="w-8 h-8 rounded-full border border-gray-200" />
+                )}
+                <button 
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-red-600 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={handleLogin}
+                className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-700 transition-colors bg-indigo-50 px-4 py-2 rounded-xl"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Login</span>
+              </button>
+            )}
+
+            {!isAdmin && (
+              <Link to="/cart" className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors">
+                <ShoppingCart className="w-6 h-6" />
+                {cartCount > 0 && (
+                  <span className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    {cartCount}
+                  </span>
+                )}
+              </Link>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  </nav>
-);
+    </nav>
+  );
+};
 
 // --- Pages ---
 
@@ -418,12 +617,14 @@ const Storefront = ({
   products, 
   addToCart, 
   currency, 
-  rates 
+  rates,
+  isAdmin
 }: { 
   products: Product[]; 
   addToCart: (p: Product, selectedVariations?: { [key: string]: string }) => void;
   currency: string;
   rates: ExchangeRates;
+  isAdmin: boolean;
 }) => {
   const [search, setSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -442,6 +643,7 @@ const Storefront = ({
             addToCart={addToCart}
             currency={currency}
             rates={rates}
+            isAdmin={isAdmin}
           />
         )}
       </AnimatePresence>
@@ -538,18 +740,26 @@ const Storefront = ({
 
 const AdminPanel = ({ 
   products, 
-  setProducts, 
+  addProduct,
+  updateProduct,
+  deleteProduct,
   orders, 
-  setOrders,
+  updateOrder,
   currency, 
-  rates 
+  rates,
+  user,
+  isAdmin
 }: { 
   products: Product[]; 
-  setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
+  addProduct: (p: Product) => Promise<void>;
+  updateProduct: (p: Product) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
   orders: Order[];
-  setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
+  updateOrder: (id: string, data: Partial<Order>) => Promise<void>;
   currency: string;
   rates: ExchangeRates;
+  user: User | null;
+  isAdmin: boolean;
 }) => {
   const [url, setUrl] = useState('');
   const [markup, setMarkup] = useState(() => {
@@ -557,26 +767,68 @@ const AdminPanel = ({
     return saved ? Number(saved) : 0;
   });
   const [loading, setLoading] = useState(false);
+  const [importPreview, setImportPreview] = useState<Product | null>(null);
   const [tab, setTab] = useState<'inventory' | 'approval' | 'orders' | 'tracking'>('inventory');
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('dropship_default_markup', markup.toString());
   }, [markup]);
 
-  const handleClearStore = () => {
-    if (confirm("Are you sure you want to clear ALL products and orders? This cannot be undone.")) {
-      setProducts([]);
-      setOrders([]);
-      localStorage.removeItem('dropship_products');
-      localStorage.removeItem('dropship_orders');
-      alert("Store cleared successfully.");
+  const handleFulfill = async (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    try {
+      // Update status to processing
+      await updateOrder(orderId, { automationStatus: 'processing', automationLog: ['Starting fulfillment simulation...'] });
+
+      const response = await fetch('/api/fulfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          customer: order.customer,
+          items: order.items
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        await updateOrder(orderId, { 
+          automationStatus: 'completed', 
+          automationLog: result.logs,
+          status: 'fulfilled'
+        });
+      } else {
+        await updateOrder(orderId, { 
+          automationStatus: 'failed', 
+          automationLog: [...(order.automationLog || []), `Error: ${result.error}`]
+        });
+      }
+    } catch (error) {
+      console.error('Fulfillment error:', error);
+      await updateOrder(orderId, { 
+        automationStatus: 'failed', 
+        automationLog: [...(order.automationLog || []), `Critical Error: ${error instanceof Error ? error.message : String(error)}`]
+      });
     }
+  };
+
+  const handleClearStore = async () => {
+    for (const p of products) {
+      await deleteProduct(p.id);
+    }
+    setShowConfirmClear(false);
   };
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
     setLoading(true);
+    
     try {
       const res = await fetch('/api/scrape', {
         method: 'POST',
@@ -590,45 +842,70 @@ const AdminPanel = ({
         ...data,
         id: Math.random().toString(36).substr(2, 9),
         markup,
-        status: 'pending',
-        verificationLogs: [
-          `[AGENT] Initiating verification for ${data.title}...`,
-          `[AGENT] Checking source URL: ${url}`,
-          `[AGENT] Validating price: ${data.price} ${data.sourceCurrency}`,
-          `[AGENT] Extracting features and variations...`,
-          `[AGENT] Verification complete. Product is safe to list.`
-        ]
+        status: 'pending'
       };
-      setProducts(prev => [...prev, newProduct]);
+      setImportPreview(newProduct);
       setUrl('');
-      setTab('approval');
     } catch (err) {
-      alert('Failed to import product. Please check the URL.');
+      console.error('Import failed:', err);
+      alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const updateStatus = (id: string, status: 'approved' | 'pending') => {
-    setProducts(prev => prev.map(p => p.id === id ? { ...p, status } : p));
-  };
-
-  const removeProduct = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
-  };
-
-  const cancelOrder = (id: string) => {
-    if (confirm("Are you sure you want to cancel this order? This will stop any further processing.")) {
-      setOrders(prev => prev.map(o => o.id === id ? { 
-        ...o, 
-        status: 'cancelled', 
-        automationStatus: 'failed',
-        automationLog: [...(o.automationLog || []), `[SYSTEM] Order cancelled by administrator at ${new Date().toLocaleString()}.`]
-      } : o));
+  const updateStatus = async (id: string, status: 'approved' | 'pending') => {
+    const product = products.find(p => p.id === id);
+    if (product) {
+      await updateProduct({ ...product, status });
     }
   };
 
+  const removeProduct = async (id: string) => {
+    await deleteProduct(id);
+  };
+
+  const handleCancelOrder = async (id: string) => {
+    const order = orders.find(o => o.id === id);
+    if (order) {
+      await updateOrder(order.id, { 
+        status: 'cancelled', 
+        automationStatus: 'failed',
+        automationLog: [...(order.automationLog || []), `[SYSTEM] Order cancelled by administrator at ${new Date().toLocaleString()}.`]
+      });
+    }
+    setOrderToCancel(null);
+  };
+
   const pendingCount = products.filter(p => p.status === 'pending').length;
+
+  if (!user) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-24 text-center">
+        <ShieldCheck className="w-16 h-16 text-indigo-600 mx-auto mb-6" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Admin Access Restricted</h2>
+        <p className="text-gray-600 mb-8">Please login with your administrator account to access the dashboard.</p>
+        <button 
+          onClick={() => signInWithPopup(auth, googleProvider)}
+          className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center gap-2 mx-auto"
+        >
+          <LogIn className="w-5 h-5" />
+          Login with Google
+        </button>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-24 text-center">
+        <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-6" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Unauthorized</h2>
+        <p className="text-gray-600 mb-8">Your account ({user.email}) does not have administrator privileges.</p>
+        <Link to="/" className="text-indigo-600 font-bold hover:underline">Return to Store</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-12">
@@ -638,7 +915,7 @@ const AdminPanel = ({
           <div className="flex items-center gap-4 mt-1">
             <p className="text-gray-500">Manage your dropshipping empire.</p>
             <button 
-              onClick={handleClearStore}
+              onClick={() => setShowConfirmClear(true)}
               className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-widest flex items-center gap-1 transition-colors"
             >
               <Trash2 className="w-3 h-3" />
@@ -679,6 +956,76 @@ const AdminPanel = ({
         </div>
       </div>
 
+      <AnimatePresence>
+        {showConfirmClear && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl"
+            >
+              <Trash2 className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Clear Store?</h3>
+              <p className="text-gray-600 mb-6 text-sm">Are you sure you want to clear ALL products? This cannot be undone.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowConfirmClear(false)}
+                  className="flex-1 px-6 py-2 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleClearStore}
+                  className="flex-1 px-6 py-2 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {orderToCancel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl"
+            >
+              <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Cancel Order?</h3>
+              <p className="text-gray-600 mb-6 text-sm">Are you sure you want to cancel this order? This will stop any further processing.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setOrderToCancel(null)}
+                  className="flex-1 px-6 py-2 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  Back
+                </button>
+                <button 
+                  onClick={() => handleCancelOrder(orderToCancel)}
+                  className="flex-1 px-6 py-2 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  Confirm Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {tab === 'inventory' && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
@@ -712,7 +1059,17 @@ const AdminPanel = ({
                   disabled={loading}
                   className="bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
                 >
-                  {loading ? 'Analyzing Source...' : 'Import Product'}
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Package className="w-5 h-5" />
+                      Import Product
+                    </>
+                  )}
                 </button>
               </form>
             </div>
@@ -735,14 +1092,14 @@ const AdminPanel = ({
                       <Store className="w-5 h-5 text-indigo-300" />
                     </div>
                     <div className="text-sm">
-                      <div className="font-bold">Kikuu Account</div>
-                      <div className="opacity-60">MAC8 STORES (mr.dummy3719@gmail.com)</div>
+                      <div className="font-bold">Supplier Account</div>
+                      <div className="opacity-60">Connected (mr.dummy3719@gmail.com)</div>
                     </div>
                   </div>
                   <button 
                     onClick={() => {
-                      const email = prompt("Enter your Kikuu email to connect:", "mr.dummy3719@gmail.com");
-                      if (email) alert(`Successfully connected to Kikuu account: ${email}`);
+                      const email = prompt("Enter your supplier email to connect:", "mr.dummy3719@gmail.com");
+                      if (email) alert(`Successfully connected to supplier account: ${email}`);
                     }}
                     className="text-xs font-bold bg-white text-indigo-900 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
                   >
@@ -767,11 +1124,11 @@ const AdminPanel = ({
                   </li>
                   <li className="flex gap-2">
                     <span className="font-bold text-indigo-600">3.</span>
-                    <span>The system logs into your Kikuu account (MAC8 STORES).</span>
+                    <span>The system logs into your supplier account.</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="font-bold text-indigo-600">4.</span>
-                    <span>It uses the customer's shipping info to place the order on Kikuu.</span>
+                    <span>It uses the customer's shipping info to place the order on the source site.</span>
                   </li>
                 </ul>
               </div>
@@ -782,9 +1139,10 @@ const AdminPanel = ({
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Active Inventory ({products.filter(p => p.status === 'approved').length})</h2>
               <button 
-                onClick={() => {
+                onClick={async () => {
                   if (confirm(`Update all ${products.filter(p => p.status === 'approved').length} products to ${markup}% markup?`)) {
-                    setProducts(prev => prev.map(p => p.status === 'approved' ? { ...p, markup } : p));
+                    const approved = products.filter(p => p.status === 'approved');
+                    await Promise.all(approved.map(p => updateProduct({ ...p, markup })));
                   }
                 }}
                 className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
@@ -809,12 +1167,12 @@ const AdminPanel = ({
                         <input 
                           type="number" 
                           value={p.price} 
-                          onChange={(e) => setProducts(prev => prev.map(item => item.id === p.id ? { ...item, price: Number(e.target.value) } : item))}
+                          onChange={(e) => updateProduct({ ...p, price: Number(e.target.value) })}
                           className="w-24 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
                         />
                         <select 
                           value={p.sourceCurrency} 
-                          onChange={(e) => setProducts(prev => prev.map(item => item.id === p.id ? { ...item, sourceCurrency: e.target.value } : item))}
+                          onChange={(e) => updateProduct({ ...p, sourceCurrency: e.target.value })}
                           className="px-1 py-1 border border-gray-200 rounded text-[10px] font-bold"
                         >
                           {Object.keys(rates).map(c => <option key={c} value={c}>{c}</option>)}
@@ -826,7 +1184,7 @@ const AdminPanel = ({
                         <input 
                           type="number" 
                           value={p.markup} 
-                          onChange={(e) => setProducts(prev => prev.map(item => item.id === p.id ? { ...item, markup: Number(e.target.value) } : item))}
+                          onChange={(e) => updateProduct({ ...p, markup: Number(e.target.value) })}
                           className="w-16 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
                         />
                         <span className="text-gray-400">%</span>
@@ -863,10 +1221,44 @@ const AdminPanel = ({
               No products waiting for approval.
             </div>
           ) : (
-            products.filter(p => p.status === 'pending').map(p => (
-              <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6">
-                <img src={p.image} className="w-full md:w-48 h-48 object-cover rounded-xl" referrerPolicy="no-referrer" />
-                <div className="flex-1">
+            products.filter(p => p.status === 'pending').map(p => {
+              const availableImages = Array.from(new Set([
+                p.image,
+                ...(p.gallery || []),
+                ...(p.variations?.flatMap(v => v.options.map(o => o.image).filter((img): img is string => !!img)) || [])
+              ]));
+
+              return (
+                <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6">
+                  <div className="w-full md:w-48 space-y-4">
+                    <div className="relative group">
+                      <img src={p.image} className="w-full h-48 object-cover rounded-xl shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
+                        <span className="text-white text-[10px] font-bold uppercase tracking-widest">Primary Image</span>
+                      </div>
+                    </div>
+                    
+                    {availableImages.length > 1 && (
+                      <div className="space-y-2">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Select Primary Image</p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {availableImages.map((img, i) => (
+                            <button
+                              key={i}
+                              onClick={() => updateProduct({ ...p, image: img })}
+                              className={cn(
+                                "aspect-square rounded-lg overflow-hidden border-2 transition-all",
+                                p.image === img ? "border-indigo-600 shadow-sm scale-105" : "border-transparent opacity-50 hover:opacity-100"
+                              )}
+                            >
+                              <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
                   <div className="flex justify-between items-start mb-4">
                     <h3 className="text-lg font-bold text-gray-900">{p.title}</h3>
                     <div className="flex gap-2">
@@ -917,12 +1309,12 @@ const AdminPanel = ({
                         <input 
                           type="number" 
                           value={p.price} 
-                          onChange={(e) => setProducts(prev => prev.map(item => item.id === p.id ? { ...item, price: Number(e.target.value) } : item))}
+                          onChange={(e) => updateProduct({ ...p, price: Number(e.target.value) })}
                           className="w-32 px-3 py-2 border border-gray-200 rounded-xl text-lg font-bold"
                         />
                         <select 
                           value={p.sourceCurrency} 
-                          onChange={(e) => setProducts(prev => prev.map(item => item.id === p.id ? { ...item, sourceCurrency: e.target.value } : item))}
+                          onChange={(e) => updateProduct({ ...p, sourceCurrency: e.target.value })}
                           className="px-2 py-2 border border-gray-200 rounded-xl text-sm font-bold"
                         >
                           {Object.keys(rates).map(c => <option key={c} value={c}>{c}</option>)}
@@ -938,7 +1330,7 @@ const AdminPanel = ({
                       <input 
                         type="number" 
                         value={p.markup} 
-                        onChange={(e) => setProducts(prev => prev.map(item => item.id === p.id ? { ...item, markup: Number(e.target.value) } : item))}
+                        onChange={(e) => updateProduct({ ...p, markup: Number(e.target.value) })}
                         className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-lg font-bold text-indigo-600"
                       />
                     </div>
@@ -969,14 +1361,40 @@ const AdminPanel = ({
                   </div>
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            );
+          })
+        )}
+      </div>
+    )}
 
       {tab === 'orders' && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-bold">Recent Orders ({orders.length})</h2>
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Revenue (Escrow)</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {formatPrice(orders.reduce((sum, o) => sum + o.total, 0), currency, rates, 'USD')}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1">Total funds processed by bridge</div>
+            </div>
+            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Profit (Released)</div>
+              <div className="text-2xl font-bold text-green-600">
+                {formatPrice(orders.reduce((sum, o) => sum + (o.profit || 0), 0), currency, rates, 'USD')}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1">Sent to: 0797691203</div>
+            </div>
+            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Source Costs (Allocated)</div>
+              <div className="text-2xl font-bold text-orange-600">
+                {formatPrice(orders.reduce((sum, o) => sum + (o.sourceCost || 0), 0), currency, rates, 'USD')}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1">Funds used for supplier purchases</div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold">Recent Orders ({orders.length})</h2>
           {orders.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-2xl text-gray-400">
               No orders yet.
@@ -1019,15 +1437,39 @@ const AdminPanel = ({
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="font-bold text-gray-900">{formatPrice(order.total, order.currency || 'USD', rates, 'USD')}</div>
-                        <div className="text-[10px] text-green-600 font-bold">
-                          Profit: {formatPrice(order.items.reduce((sum, item) => {
-                            const profitUSD = (item.price * (item.markup / 100) * item.quantity) / (rates[item.sourceCurrency] || 1);
-                            return sum + profitUSD;
-                          }, 0), order.currency || 'USD', rates, 'USD')}
+                        <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Financial Breakdown</div>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Customer Paid:</span>
+                            <span className="font-bold text-gray-900">{formatPrice(order.total, order.currency || 'USD', rates, 'USD')}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Source Cost:</span>
+                            <span className="font-bold text-orange-600">
+                              {formatPrice(order.sourceCost || order.items.reduce((sum, item) => sum + (item.price * item.quantity) / (rates[item.sourceCurrency] || 1), 0), order.currency || 'USD', rates, 'USD')}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-xs pt-1 border-t border-gray-100">
+                            <span className="text-gray-500">Your Profit:</span>
+                            <span className="font-bold text-green-600">
+                              {formatPrice(order.profit || order.items.reduce((sum, item) => {
+                                const profitUSD = (item.price * (item.markup / 100) * item.quantity) / (rates[item.sourceCurrency] || 1);
+                                return sum + profitUSD;
+                              }, 0), order.currency || 'USD', rates, 'USD')}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-[9px] text-indigo-400 font-mono">
-                          To: 0797691203
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="text-[9px] text-indigo-400 font-mono flex items-center gap-1">
+                            <Smartphone className="w-2 h-2" />
+                            To: 0797691203
+                          </div>
+                          <span className={cn(
+                            "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-tighter",
+                            order.status === 'paid' ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
+                          )}>
+                            {order.status === 'paid' ? 'In Escrow' : 'Released'}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -1036,7 +1478,7 @@ const AdminPanel = ({
                             value={order.status}
                             onChange={(e) => {
                               const newStatus = e.target.value as Order['status'];
-                              setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: newStatus } : o));
+                              updateOrder(order.id, { status: newStatus });
                             }}
                             className={cn(
                               "text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider w-fit border-none outline-none cursor-pointer shadow-sm",
@@ -1069,9 +1511,18 @@ const AdminPanel = ({
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-2">
                           <AutomationLogView logs={order.automationLog} />
+                          {order.status === 'paid' && order.automationStatus !== 'processing' && (
+                            <button 
+                              onClick={() => handleFulfill(order.id)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest bg-indigo-50 px-2 py-1 rounded-lg"
+                            >
+                              <Play className="w-3 h-3" />
+                              Fulfill Order
+                            </button>
+                          )}
                           {(order.status === 'pending' || order.status === 'paid') && (
                             <button 
-                              onClick={() => cancelOrder(order.id)}
+                              onClick={() => updateOrder(order.id, { status: 'cancelled' })}
                               className="flex items-center gap-1 text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors uppercase tracking-widest"
                             >
                               <X className="w-3 h-3" />
@@ -1087,7 +1538,8 @@ const AdminPanel = ({
             </div>
           )}
         </div>
-      )}
+      </div>
+    )}
 
       {tab === 'tracking' && (
         <div className="space-y-6">
@@ -1114,7 +1566,7 @@ const AdminPanel = ({
                   ] : []),
                   ...(order.automationStatus === 'completed' || order.status === 'shipped' || order.status === 'delivered' ? [
                     { date: new Date(new Date(order.createdAt).getTime() + 7200000).toISOString(), status: 'Fulfillment Started', location: 'Automation Engine', icon: <Settings className="w-4 h-4" />, completed: true },
-                    { date: new Date(new Date(order.createdAt).getTime() + 14400000).toISOString(), status: 'Order Placed on Kikuu', location: 'MAC8 STORES (Source)', icon: <Store className="w-4 h-4" />, completed: true },
+                    { date: new Date(new Date(order.createdAt).getTime() + 14400000).toISOString(), status: 'Order Placed on Source Site', location: 'Supplier Warehouse (Source)', icon: <Store className="w-4 h-4" />, completed: true },
                     { date: new Date(new Date(order.createdAt).getTime() + 86400000).toISOString(), status: 'Processed at Warehouse', location: 'Guangzhou, CN', icon: <Package className="w-4 h-4" />, completed: true },
                   ] : []),
                   ...(order.status === 'shipped' || order.status === 'delivered' ? [
@@ -1274,6 +1726,21 @@ const AdminPanel = ({
           )}
         </div>
       )}
+
+          {importPreview && (
+            <ProductModal
+              product={importPreview}
+              onClose={() => setImportPreview(null)}
+              onConfirm={async (updated) => {
+                await addProduct(updated);
+                setImportPreview(null);
+                setTab('approval');
+              }}
+              currency="USD"
+              rates={rates}
+              isAdmin={true}
+            />
+          )}
     </div>
   );
 };
@@ -1283,19 +1750,23 @@ const CartPage = ({
   setCart, 
   addOrder, 
   currency, 
-  rates 
+  rates,
+  user
 }: { 
   cart: CartItem[]; 
   setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
-  addOrder: (o: Order) => void;
+  addOrder: (o: Order) => Promise<void>;
   currency: string;
   rates: ExchangeRates;
+  user: User | null;
 }) => {
   const [step, setStep] = useState<'cart' | 'checkout' | 'success'>('cart');
   const [customer, setCustomer] = useState<CustomerInfo>({
     name: '', email: '', phone: '', address: '', city: '', country: '', zip: ''
   });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [mapsLink, setMapsLink] = useState('');
 
   const triggerFulfillment = async (order: Order) => {
     try {
@@ -1306,21 +1777,19 @@ const CartPage = ({
       });
       const data = await res.json();
       if (data.success) {
-        // Update the order in the parent state
-        // This is tricky because App.tsx owns the state. 
-        // We'll use a custom event or just let the user refresh/re-read from localStorage if needed, 
-        // but better to update it via a prop if possible.
-        // For now, let's assume addOrder handles it or we add a specific updateOrder function.
-        window.dispatchEvent(new CustomEvent('order_updated', { detail: { id: order.id, automationStatus: data.status, automationLog: data.logs } }));
+        window.dispatchEvent(new CustomEvent('order_updated', { 
+          detail: { 
+            id: order.id, 
+            automationStatus: data.status, 
+            automationLog: data.logs,
+            status: 'fulfilled'
+          } 
+        }));
       }
     } catch (err) {
       console.error('Fulfillment trigger failed:', err);
     }
   };
-
-  useEffect(() => {
-    // M-Pesa handles success directly in handleCheckout
-  }, [setCart]);
 
   const totalUSD = cart.reduce((sum, item) => {
     const itemPriceUSD = item.price / (rates[item.sourceCurrency] || 1);
@@ -1329,7 +1798,6 @@ const CartPage = ({
 
   const handleAutoDetect = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
       return;
     }
 
@@ -1338,7 +1806,6 @@ const CartPage = ({
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          // Using Nominatim for reverse geocoding (free, no API key required)
           const response = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
           );
@@ -1359,25 +1826,21 @@ const CartPage = ({
           }
         } catch (error) {
           console.error("Geocoding failed:", error);
-          alert("Failed to detect address. Please enter manually.");
         } finally {
           setIsProcessing(false);
         }
       },
       (error) => {
         console.error("Geolocation error:", error);
-        alert("Location access denied or unavailable.");
         setIsProcessing(false);
       }
     );
   };
 
   const handleGoogleMapsLink = async () => {
-    const url = prompt("Paste your Google Maps location link (e.g., from WhatsApp):");
-    if (!url) return;
+    if (!mapsLink) return;
 
-    if (!url.includes("google.com/maps") && !url.includes("maps.app.goo.gl")) {
-      alert("Please provide a valid Google Maps link.");
+    if (!mapsLink.includes("google.com/maps") && !mapsLink.includes("maps.app.goo.gl")) {
       return;
     }
 
@@ -1386,13 +1849,12 @@ const CartPage = ({
       const res = await fetch('/api/resolve-location', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: mapsLink }),
       });
       const data = await res.json();
 
       if (data.success) {
         const { lat, lon } = data;
-        // Now use Nominatim to get the address
         const geoRes = await fetch(
           `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`
         );
@@ -1411,19 +1873,22 @@ const CartPage = ({
             zip: postcode || ''
           }));
         }
-      } else {
-        throw new Error(data.error || "Failed to resolve link");
       }
     } catch (err) {
       console.error("Google Maps link resolution failed:", err);
-      alert("Failed to extract address from link. Please try Auto-detect or enter manually.");
     } finally {
       setIsProcessing(false);
+      setShowLocationModal(false);
+      setMapsLink('');
     }
   };
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      await signInWithPopup(auth, googleProvider);
+      return;
+    }
     setIsProcessing(true);
     try {
       const res = await fetch('/api/checkout', {
@@ -1434,24 +1899,30 @@ const CartPage = ({
       const data = await res.json();
       
       if (data.success) {
+        const totalUSD = cart.reduce((sum, item) => sum + (item.price * (1 + item.markup / 100)) * item.quantity, 0);
+        const sourceCostUSD = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const profitUSD = totalUSD - sourceCostUSD;
+
         const newOrder: Order = {
           id: data.orderId || `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
           items: [...cart],
           customer: { ...customer },
           total: totalUSD,
+          sourceCost: sourceCostUSD,
+          profit: profitUSD,
           status: 'paid',
           automationStatus: 'processing',
-          automationLog: [`[SYSTEM] M-Pesa payment confirmed. Profit (20%) split to 0797691203. Triggering automation...`],
+          automationLog: [`[SYSTEM] M-Pesa payment confirmed. Total: ${formatPrice(totalUSD, 'USD', rates, 'USD')}. Funds held in Escrow. Split: Profit to 0797691203, Source Cost to Fulfillment Bridge.`],
           createdAt: new Date().toISOString(),
           currency
         };
-        addOrder(newOrder);
+        await addOrder(newOrder);
         setStep('success');
         setCart([]);
         triggerFulfillment(newOrder);
       }
     } catch (err) {
-      alert('Checkout failed. Please try again.');
+      console.error('Checkout failed:', err);
     } finally {
       setIsProcessing(false);
     }
@@ -1537,7 +2008,7 @@ const CartPage = ({
                     <button 
                       type="button"
                       disabled={isProcessing}
-                      onClick={handleGoogleMapsLink}
+                      onClick={() => setShowLocationModal(true)}
                       className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
                       <ExternalLink className="w-3 h-3" />
@@ -1665,6 +2136,60 @@ const CartPage = ({
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showLocationModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900">Paste Maps Link</h3>
+              </div>
+              <p className="text-gray-600 mb-6 text-sm">Paste your Google Maps location link (e.g., from WhatsApp) to automatically fill your shipping details.</p>
+              <div className="space-y-4">
+                <input
+                  type="url"
+                  value={mapsLink}
+                  onChange={(e) => setMapsLink(e.target.value)}
+                  placeholder="https://maps.app.goo.gl/..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  autoFocus
+                />
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      setShowLocationModal(false);
+                      setMapsLink('');
+                    }}
+                    className="flex-1 px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleGoogleMapsLink}
+                    disabled={!mapsLink || isProcessing}
+                    className="flex-1 px-6 py-3 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                  >
+                    {isProcessing ? 'Resolving...' : 'Confirm'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -1672,40 +2197,71 @@ const CartPage = ({
 // --- Main App ---
 
 export default function App() {
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('dropship_products');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('dropship_orders');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [currency, setCurrency] = useState('TZS');
   const [rates, setRates] = useState<ExchangeRates>({ USD: 1 });
 
   useEffect(() => {
-    const fetchRates = async () => {
-      try {
-        const res = await fetch('https://open.er-api.com/v6/latest/USD');
-        const data = await res.json();
-        if (data.rates) {
-          setRates(data.rates);
-        }
-      } catch (err) {
-        console.error('Failed to fetch exchange rates:', err);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setIsAuthReady(true);
+      if (u) {
+        setIsAdmin(u.email === "mr.dummy3719@gmail.com");
+      } else {
+        setIsAdmin(false);
       }
-    };
-    fetchRates();
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('dropship_products', JSON.stringify(products));
-  }, [products]);
+    if (!isAuthReady) return;
+
+    const productsRef = collection(db, 'products');
+    const unsubscribeProducts = onSnapshot(productsRef, (snapshot) => {
+      const p = snapshot.docs.map(doc => doc.data() as Product);
+      setProducts(p);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'products');
+    });
+
+    let unsubscribeOrders = () => {};
+    if (isAdmin) {
+      const ordersRef = collection(db, 'orders');
+      const q = query(ordersRef, orderBy('createdAt', 'desc'));
+      unsubscribeOrders = onSnapshot(q, (snapshot) => {
+        const o = snapshot.docs.map(doc => doc.data() as Order);
+        setOrders(o);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'orders');
+      });
+    } else {
+      setOrders([]);
+    }
+
+    return () => {
+      unsubscribeProducts();
+      unsubscribeOrders();
+    };
+  }, [isAuthReady, isAdmin]);
 
   useEffect(() => {
-    localStorage.setItem('dropship_orders', JSON.stringify(orders));
-  }, [orders]);
+    async function testConnection() {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if(error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration.");
+        }
+      }
+    }
+    testConnection();
+  }, []);
 
   const addToCart = (product: Product, selectedVariations?: { [key: string]: string }, quantity: number = 1) => {
     setCart(prev => {
@@ -1729,47 +2285,107 @@ export default function App() {
     });
   };
 
-  const addOrder = (order: Order) => {
-    setOrders(prev => [{ ...order, currency }, ...prev]);
+  const addOrder = async (order: Order) => {
+    const path = `orders/${order.id}`;
+    try {
+      await setDoc(doc(db, 'orders', order.id), { ...order, currency });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    }
   };
+
+  const addProduct = async (product: Product) => {
+    const path = `products/${product.id}`;
+    try {
+      await setDoc(doc(db, 'products', product.id), product);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  };
+
+  const updateProduct = async (product: Product) => {
+    const path = `products/${product.id}`;
+    try {
+      await setDoc(doc(db, 'products', product.id), product);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  };
+
+  const deleteProduct = async (productId: string) => {
+    const path = `products/${productId}`;
+    try {
+      await deleteDoc(doc(db, 'products', productId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const updateOrder = useCallback(async (orderId: string, data: Partial<Order>) => {
+    const path = `orders/${orderId}`;
+    try {
+      await updateDoc(doc(db, 'orders', orderId), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }, []);
 
   useEffect(() => {
     const handleOrderUpdate = (e: any) => {
-      const { id, automationStatus, automationLog } = e.detail;
-      setOrders(prev => prev.map(o => o.id === id ? { ...o, automationStatus, automationLog } : o));
+      const { id, automationStatus, automationLog, status } = e.detail;
+      const updateData: Partial<Order> = { automationStatus, automationLog };
+      if (status) updateData.status = status;
+      updateOrder(id, updateData);
     };
     window.addEventListener('order_updated', handleOrderUpdate);
     return () => window.removeEventListener('order_updated', handleOrderUpdate);
-  }, []);
+  }, [updateOrder]);
 
   return (
-    <Router>
-      <div className="min-h-screen bg-white font-sans text-gray-900">
-        <Navbar 
-          cartCount={cart.reduce((s, i) => s + i.quantity, 0)} 
-          isAdmin={window.location.pathname === '/admin'} 
-          currency={currency}
-          setCurrency={setCurrency}
-          rates={rates}
-        />
-        <main>
-          <Routes>
-            <Route path="/" element={<Storefront products={products} addToCart={addToCart} currency={currency} rates={rates} />} />
-            <Route path="/admin" element={<AdminPanel products={products} setProducts={setProducts} orders={orders} setOrders={setOrders} currency={currency} rates={rates} />} />
-            <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} />} />
-          </Routes>
-        </main>
-        
-        <footer className="border-t border-gray-100 py-12 mt-24">
-          <div className="max-w-7xl mx-auto px-4 text-center">
-            <div className="flex items-center justify-center gap-2 mb-4 opacity-50">
-              <Package className="w-5 h-5" />
-              <span className="font-bold tracking-tight">DropShip Pro</span>
+    <ErrorBoundary>
+      <Router>
+        <div className="min-h-screen bg-white font-sans text-gray-900">
+          <Navbar 
+            cartCount={cart.reduce((s, i) => s + i.quantity, 0)} 
+            isAdmin={window.location.pathname === '/admin'} 
+            currency={currency}
+            setCurrency={setCurrency}
+            rates={rates}
+            user={user}
+          />
+          <main>
+            <Routes>
+              <Route path="/" element={<Storefront products={products.filter(p => p.status === 'approved')} addToCart={addToCart} currency={currency} rates={rates} isAdmin={isAdmin} />} />
+              <Route path="/admin" element={
+                <AdminPanel 
+                  products={products} 
+                  addProduct={addProduct}
+                  updateProduct={updateProduct}
+                  deleteProduct={deleteProduct}
+                  orders={orders} 
+                  updateOrder={updateOrder}
+                  currency={currency} 
+                  rates={rates} 
+                  user={user}
+                  isAdmin={isAdmin}
+                />
+              } />
+              <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} user={user} />} />
+            </Routes>
+          </main>
+          
+          <footer className="border-t border-gray-100 py-12 mt-24">
+            <div className="max-w-7xl mx-auto px-4 text-center">
+              <div className="flex items-center justify-center gap-2 mb-4 opacity-50">
+                <Package className="w-5 h-5" />
+                <span className="font-bold tracking-tight">DropShip Pro</span>
+              </div>
+              <p className="text-sm text-gray-400">© 2026 DropShip Pro. All rights reserved. Powered by AI Studio.</p>
             </div>
-            <p className="text-sm text-gray-400">© 2026 DropShip Pro. All rights reserved. Powered by AI Studio.</p>
-          </div>
-        </footer>
-      </div>
-    </Router>
+          </footer>
+        </div>
+      </Router>
+    </ErrorBoundary>
   );
 }
+

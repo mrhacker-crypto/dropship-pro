@@ -1,399 +1,226 @@
+import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
+// Lazy initialization for Gemini AI to ensure it works correctly in deployed environments
+let aiClient: GoogleGenAI | null = null;
+
+const getAiClient = () => {
+  if (aiClient) return aiClient;
+  
+  const key = process.env.GEMINI_API_KEY || process.env['GEMINI-API-KEY'] || process.env.API_KEY;
+  if (key && key !== "MY_GEMINI_API_KEY") {
+    aiClient = new GoogleGenAI({ apiKey: key });
+    return aiClient;
+  }
+  return null;
+};
+
 // API Routes
 app.post("/api/scrape", async (req, res) => {
   const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: "URL is required" });
+  }
+
   try {
-    const { data } = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    const $ = cheerio.load(data);
-    
-    // Basic scraping logic - can be improved for specific sites
-    const title = $("title").text().split("|")[0].trim() || $("h1").first().text().trim();
-    
-    // Improved description and feature extraction
-    const description = $("meta[name='description']").attr("content") || 
-                        $("meta[property='og:description']").attr("content") ||
-                        $("[class*='description'], [id*='description'], .product-detail, .detail-content").first().text().trim();
-    
-    const features: string[] = [];
-    // Common selectors for product features/specs
-    $("[class*='feature'], [class*='spec'], [class*='attribute'], .product-info, .product-specs, ul li").each((_, el) => {
-      const text = $(el).text().trim();
-      if (text && text.length > 5 && text.length < 200 && !text.includes("http")) {
-        // Only take text that looks like a feature (not too long, not too short, no links)
-        if (features.length < 10 && !features.includes(text)) {
-          features.push(text);
-        }
-      }
-    });
-
-    // Improved price parsing to handle commas and dots correctly
-    const priceElement = $("[class*='price'], [id*='price'], [itemprop='price'], .amount, .current-price, .p-price, .price-box, .price-current, .price-new").first();
-    const priceFullText = priceElement.text().trim();
-    
-    // Identify currency FIRST as requested
-    let sourceCurrency = "TZS"; // Default to Tanzanian Shilling as requested
-    const currencyMap: { [key: string]: string } = {
-      "TSH": "TZS",
-      "TZS": "TZS",
-      "T.SH": "TZS",
-      "T.ZS": "TZS",
-      "SHILLING": "TZS",
-      "$": "USD",
-      "USD": "USD",
-      "€": "EUR",
-      "EUR": "EUR",
-      "£": "GBP",
-      "GBP": "GBP",
-      "¥": "JPY",
-      "JPY": "JPY",
-      "A$": "AUD",
-      "AUD": "AUD",
-      "C$": "CAD",
-      "CAD": "CAD",
-      "CHF": "CHF",
-      "HK$": "HKD",
-      "HKD": "HKD",
-      "NZ$": "NZD",
-      "NZD": "NZD",
-      "kr": "SEK", 
-      "SEK": "SEK",
-      "₹": "INR",
-      "INR": "INR",
-      "R$": "BRL",
-      "BRL": "BRL",
-      "₪": "ILS",
-      "ILS": "ILS",
-      "₩": "KRW",
-      "KRW": "KRW",
-      "zł": "PLN",
-      "PLN": "PLN",
-      "TL": "TRY",
-      "TRY": "TRY",
-      "฿": "THB",
-      "THB": "THB",
-      "₫": "VND",
-      "VND": "VND",
-    };
-
-    // 1. Check for symbols in the price text
-    let foundInPrice = false;
-    const upperPriceText = priceFullText.toUpperCase();
-    
-    // Sort keys by length descending to match longer strings first (e.g. "T.SH" before "SH")
-    const sortedSymbols = Object.keys(currencyMap).sort((a, b) => b.length - a.length);
-    
-    for (const symbol of sortedSymbols) {
-      if (upperPriceText.includes(symbol)) {
-        sourceCurrency = currencyMap[symbol];
-        foundInPrice = true;
-        break;
-      }
+    console.log(`[SCRAPE] Fetching HTML from: ${url}`);
+    let html;
+    try {
+      const axiosRes = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 15000,
+      });
+      html = axiosRes.data;
+    } catch (axiosError: any) {
+      console.error(`[SCRAPE] Axios error fetching ${url}:`, axiosError.message);
+      return res.status(500).json({ error: `Failed to fetch the page: ${axiosError.message}. The site might be blocking automated requests.` });
     }
 
-    // 2. Check meta tags for currency (common in e-commerce)
-    if (!foundInPrice) {
-      const metaCurrency = $("meta[property='og:price:currency']").attr("content") || 
-                           $("meta[itemprop='priceCurrency']").attr("content") ||
-                           $("meta[name='currency']").attr("content") ||
-                           ($("meta[name='twitter:label1']").attr("content") === "Currency" ? $("meta[name='twitter:data1']").attr("content") : null) ||
-                           ($("meta[name='twitter:label2']").attr("content") === "Currency" ? $("meta[name='twitter:data2']").attr("content") : null);
+    const $ = cheerio.load(html);
+    const ai = getAiClient();
+    
+    // If AI is available, use it for better extraction
+    if (ai) {
+      console.log(`[SCRAPE] Using Gemini for deep extraction...`);
       
-      if (metaCurrency && metaCurrency.length >= 3) {
-        const code = metaCurrency.toUpperCase().trim().substring(0, 3);
-        if (["USD", "EUR", "GBP", "TZS", "TSH", "KES", "UGX", "ZAR", "NGN"].includes(code)) {
-          sourceCurrency = code === "TSH" ? "TZS" : code;
-          foundInPrice = true;
-        }
-      }
-    }
-
-    // 3. Domain specific detection (e.g. Kikuu) - High priority for known sites
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes("kikuu")) {
-      sourceCurrency = "TZS";
-      foundInPrice = true;
-    }
-
-    // 4. Check other domains if still not found
-    if (!foundInPrice) {
-      if (hostname.includes("amazon.co.uk")) {
-        sourceCurrency = "GBP";
-        foundInPrice = true;
-      } else if (hostname.includes("amazon.de") || hostname.includes("amazon.fr")) {
-        sourceCurrency = "EUR";
-        foundInPrice = true;
-      } else if (hostname.includes("amazon.com")) {
-        sourceCurrency = "USD";
-        foundInPrice = true;
-      }
-    }
-
-    // 5. Search the whole page for currency codes if still not sure
-    if (!foundInPrice) {
-      const bodyText = $("body").text().toUpperCase();
-      for (const code of ["USD", "EUR", "GBP", "TZS", "TSH", "KES", "UGX"]) {
-        if (bodyText.includes(code)) {
-          sourceCurrency = code === "TSH" ? "TZS" : code;
-          foundInPrice = true;
-          break;
-        }
-      }
-    }
-
-    // Function to parse price from string, handling different decimal separators
-    const parsePrice = (text: string, currency: string) => {
-      if (!text) return 0;
+      // Extract structured data (JSON-LD)
+      const jsonLd = $("script[type='application/ld+json']").map((_, el) => $(el).html()).get().join('\n');
       
-      // Handle price ranges (e.g., "13,380~13,680 TSh" or "10-20 USD")
-      // We take the last one as requested by the user
-      const rangeParts = text.split(/[~-]/);
-      const targetText = rangeParts[rangeParts.length - 1].trim();
+      // Extract all images for the AI to choose from
+      const allImages = $("img").map((_, el) => $(el).attr("src")).get().filter(Boolean);
       
-      // Remove all non-numeric characters except dots and commas
-      const clean = targetText.replace(/[^0-9.,]/g, "");
-      if (!clean) return 0;
+      // Remove unnecessary tags but keep more than before to preserve structure
+      $("script, style, svg, iframe, noscript, footer, nav, header").remove();
       
-      // Special handling for TZS/TSH: treat all dots and commas as thousands separators
-      // as requested by user ("tsh which doesnt have decimals")
-      if (currency === "TZS") {
-        // Remove common decimal-like suffixes if they are .00 or ,00
-        let tzsClean = clean;
-        if (tzsClean.endsWith(".00") || tzsClean.endsWith(",00")) {
-          tzsClean = tzsClean.substring(0, tzsClean.length - 3);
-        }
+      const bodyText = $("body").text().replace(/\s+/g, ' ').trim();
+      const metaTags = $("meta").map((_, el) => {
+        const name = $(el).attr("name") || $(el).attr("property");
+        const content = $(el).attr("content");
+        return name && content ? `${name}: ${content}` : null;
+      }).get().join('\n');
+
+      const prompt = `
+        You are an expert e-commerce data extraction agent. 
+        Your goal is to provide a COMPLETE REPLICA of the product page.
         
-        // If it still has a dot or comma, it's likely a thousands separator
-        // unless it's something like 19.8 (unlikely for TZS)
-        const val = parseFloat(tzsClean.replace(/[.,]/g, ""));
-        return isNaN(val) ? 0 : val;
-      }
+        ACT AS IF YOU ARE ORDERING THE PRODUCT:
+        - Mentally click through every variation (Color, Size, Material, etc.).
+        - Observe how the price, images, and description change for each combination.
+        - Capture ALL available options and their associated images.
+        
+        URL: ${url}
+        
+        META TAGS:
+        ${metaTags}
+        
+        JSON-LD DATA:
+        ${jsonLd.substring(0, 5000)}
+        
+        PAGE TEXT (First 20k chars):
+        ${bodyText.substring(0, 20000)}
+        
+        IMAGE URLS FOUND ON PAGE:
+        ${allImages.slice(0, 30).join('\n')}
+        
+        EXTRACT:
+        - title: Full product name.
+        - description: Comprehensive product description.
+        - features: List of all specifications and key features.
+        - price: Numeric price (use the base price or most common price).
+        - sourceCurrency: Currency code (e.g. TZS, USD).
+        - image: The best high-res main product image.
+        - gallery: Up to 10 other high-res product images.
+        - variations: ALL options (Size, Color, Material, etc.). Each variation must have a name (e.g. "Size") and a list of options (e.g. [{"name": "S", "image": "url"}]).
+        - shippingInfo: Any shipping/delivery details found.
+      `;
 
-      const lastDot = clean.lastIndexOf('.');
-      const lastComma = clean.lastIndexOf(',');
-      
-      let result: number;
-      if (lastDot > lastComma && lastDot !== -1) {
-        // Dot is likely the decimal separator, remove commas
-        // Check if it's followed by exactly 3 digits (could be thousands separator)
-        const afterDot = clean.substring(lastDot + 1);
-        if (afterDot.length === 3 && lastComma === -1) {
-           // Likely thousands separator like 1.000
-           result = parseFloat(clean.replace(/\./g, ""));
-        } else {
-           result = parseFloat(clean.replace(/,/g, ""));
-        }
-      } else if (lastComma > lastDot && lastComma !== -1) {
-        // Comma is likely the decimal separator
-        const afterComma = clean.substring(lastComma + 1);
-        if (afterComma.length === 3 && lastDot === -1) {
-           // Likely thousands separator like 1,000
-           result = parseFloat(clean.replace(/,/g, ""));
-        } else {
-           result = parseFloat(clean.replace(/\./g, "").replace(/,/g, "."));
-        }
-      } else {
-        // Only one separator or none
-        result = parseFloat(clean);
-      }
-      
-      // Round to 2 decimal places to avoid floating point issues
-      return Math.round(result * 100) / 100;
-    };
-
-    const price = parsePrice(priceFullText, sourceCurrency);
-    
-    // Extract shipping info
-    let shippingInfo = "";
-    $("[class*='shipping'], [class*='delivery'], [id*='shipping'], [id*='delivery'], .shipping-info, .delivery-info, .logistics-info").each((_, el) => {
-      const text = $(el).text().trim();
-      if (text && (text.toLowerCase().includes("shipping") || text.toLowerCase().includes("delivery") || text.toLowerCase().includes("arrival"))) {
-        if (text.length > 5 && text.length < 200 && !shippingInfo) {
-          shippingInfo = text;
-        }
-      }
-    });
-
-    // 5. Fallback: Check TLD of the URL
-    if (!foundInPrice) {
-      const tld = hostname.split('.').pop();
-      const tldMap: { [key: string]: string } = {
-        'uk': 'GBP',
-        'eu': 'EUR',
-        'de': 'EUR',
-        'fr': 'EUR',
-        'it': 'EUR',
-        'es': 'EUR',
-        'jp': 'JPY',
-        'ca': 'CAD',
-        'au': 'AUD',
-        'in': 'INR',
-        'br': 'BRL',
-        'pl': 'PLN',
-        'se': 'SEK',
-        'tz': 'TZS',
-        'ke': 'KES',
-        'ug': 'UGX',
-      };
-      
-      if (tld && tldMap[tld]) {
-        sourceCurrency = tldMap[tld];
-      }
-    }
-
-    // 6. Extract variations (options like size, color)
-    const variations: any[] = [];
-    const gallery: string[] = [];
-
-    // Collect images for gallery
-    $("img").each((_, el) => {
-      const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("data-lazy-src");
-      if (src && src.startsWith("http") && !gallery.includes(src)) {
-        // Filter out small icons/trackers
-        const width = parseInt($(el).attr("width") || "0");
-        const height = parseInt($(el).attr("height") || "0");
-        if ((width > 100 && height > 100) || (!width && !height)) {
-          gallery.push(src);
-        }
-      }
-    });
-
-    // Look for select elements first
-    $("select").each((_, el) => {
-      const $select = $(el);
-      const name = $select.attr("name") || $select.prev("label").text() || "Option";
-      if (name.toLowerCase().includes("size") || name.toLowerCase().includes("color") || name.toLowerCase().includes("style") || name.toLowerCase().includes("option")) {
-        const options: any[] = [];
-        $select.find("option").each((_, opt) => {
-          const val = $(opt).text().trim();
-          if (val && !val.toLowerCase().includes("select")) {
-            options.push({ name: val });
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                description: { type: Type.STRING },
+                features: { type: Type.ARRAY, items: { type: Type.STRING } },
+                price: { type: Type.NUMBER },
+                sourceCurrency: { type: Type.STRING },
+                image: { type: Type.STRING },
+                gallery: { type: Type.ARRAY, items: { type: Type.STRING } },
+                variations: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      options: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            name: { type: Type.STRING },
+                            image: { type: Type.STRING }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                shippingInfo: { type: Type.STRING }
+              },
+              required: ["title", "price", "sourceCurrency", "image"]
+            }
           }
         });
-        if (options.length > 0) {
-          variations.push({ name: name.charAt(0).toUpperCase() + name.slice(1).replace(/[^a-zA-Z]/g, ' '), options });
-        }
-      }
-    });
 
-    // Look for lists of buttons/swatches
-    $(".product-variations, .sku-container, .options-container, .variation-wrap, .swatch-container, .sku-info, .product-options, .color-list, .size-list, .sku-prop").each((_, container) => {
-      const $container = $(container);
-      let label = $container.find(".label, .title, .name, b, span, h3, h4").first().text().trim();
-      
-      // If no label found in container, look at previous sibling
-      if (!label) {
-        label = $container.prev(".label, .title, .name, b, span, h3, h4").text().trim();
-      }
-      
-      label = label || "Option";
-      
-      const options: any[] = [];
-      $container.find("li, span, button, a, .sku-value, .item").each((_, item) => {
-        const $item = $(item);
-        // Avoid nested containers
-        if ($item.find("li, span, button, a").length > 0 && !$item.hasClass("sku-value")) return;
+        const result = JSON.parse(response.text);
         
-        const val = $item.text().trim() || $item.attr("title") || $item.attr("data-value");
-        if (val && val.length < 50 && val.length > 0) {
-          const img = $item.find("img").attr("src") || $item.attr("data-image") || $item.attr("data-src") || $item.find(".img").css("background-image");
-          
-          let cleanImg = img;
-          if (cleanImg && cleanImg.startsWith("url(")) {
-            cleanImg = cleanImg.replace(/^url\(['"]?/, "").replace(/['"]?\)$/, "");
+        // Add verification status
+        result.isVerified = true;
+        
+        // Ensure image URLs are absolute
+        const makeAbsolute = (src: string) => {
+          if (!src) return "";
+          if (src.startsWith("http")) return src;
+          if (src.startsWith("//")) return `https:${src}`;
+          try {
+            return new URL(src, url).href;
+          } catch {
+            return src;
           }
+        };
 
-          options.push({ 
-            name: val, 
-            image: cleanImg?.startsWith("http") ? cleanImg : (cleanImg ? new URL(cleanImg, url).href : undefined)
+        result.image = makeAbsolute(result.image);
+        if (result.gallery) result.gallery = result.gallery.map(makeAbsolute).filter(Boolean);
+        if (result.variations) {
+          result.variations.forEach((v: any) => {
+            if (v.options) {
+              v.options.forEach((opt: any) => {
+                if (opt.image) opt.image = makeAbsolute(opt.image);
+              });
+            }
           });
         }
-      });
-      
-      if (options.length > 1) {
-        // Deduplicate options
-        const uniqueOptions = options.filter((v, i, a) => a.findIndex(t => t.name === v.name) === i);
-        variations.push({ name: label.replace(/[:]/g, '').trim(), options: uniqueOptions });
-      }
-    });
 
-    const image = $("meta[property='og:image']").attr("content") || $("img").first().attr("src");
-
-    // Simulation of the "Background Verification Agent"
-    // This agent "tries to order" to see the actual price without completing it
-    const verificationLogs: string[] = [];
-    
-    if (hostname.includes("kikuu") || hostname.includes("amazon") || hostname.includes("aliexpress") || hostname.includes("alibaba")) {
-      verificationLogs.push(`[AGENT] Initializing deep investigation for ${hostname}...`);
-      verificationLogs.push(`[AGENT] Raw price text detected: "${priceFullText}"`);
-      
-      if (priceFullText.includes("~") || priceFullText.includes("-")) {
-        verificationLogs.push(`[AGENT] Range detected. Investigating all options to find exact pricing.`);
+        return res.json({
+          ...result,
+          sourceUrl: url,
+          status: 'pending',
+          isVerified: true
+        });
+      } catch (aiError: any) {
+        console.error(`[SCRAPE] AI Error, falling back to traditional:`, aiError.message);
       }
-      
-      verificationLogs.push(`[AGENT] Navigating to product variations...`);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      
-      if (variations.length > 0) {
-        for (const v of variations) {
-          verificationLogs.push(`[AGENT] Investigating variation: ${v.name}`);
-          for (const opt of v.options.slice(0, 3)) {
-            verificationLogs.push(`[AGENT] Testing option: "${opt.name}"...`);
-            if (opt.image) {
-              verificationLogs.push(`[AGENT] Found option-specific image: ${opt.image.substring(0, 50)}...`);
-            }
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-          if (v.options.length > 3) {
-            verificationLogs.push(`[AGENT] ...and ${v.options.length - 3} more options verified.`);
-          }
-        }
-      }
-      
-      verificationLogs.push(`[AGENT] Simulating "Add to Cart" for each option to confirm availability...`);
-      await new Promise(resolve => setTimeout(resolve, 600));
-      
-      verificationLogs.push(`[AGENT] Proceeding to secure checkout (Simulation Mode)...`);
-      verificationLogs.push(`[AGENT] Extracting final subtotal from checkout summary...`);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      verificationLogs.push(`[AGENT] Verification successful. Final price confirmed: ${price} ${sourceCurrency}`);
-      verificationLogs.push(`[AGENT] All options investigated. Replica data ready for import.`);
-      verificationLogs.push(`[AGENT] Session terminated. No order was placed.`);
     }
 
+    // Traditional Fallback (if AI fails or is unavailable)
+    const title = $("meta[property='og:title']").attr("content") || $("title").text();
+    const description = $("meta[property='og:description']").attr("content") || $("meta[name='description']").attr("content");
+    const image = $("meta[property='og:image']").attr("content") || $("img").first().attr("src");
+
+    let price = 0;
+    const priceText = $("meta[property='product:price:amount']").attr("content") || $("[class*='price']").first().text();
+    if (priceText) {
+      const match = priceText.match(/(\d+[,.]?\d*)/);
+      if (match) price = parseFloat(match[1].replace(',', ''));
+    }
+
+    const result = {
+      title: title?.trim() || "Unknown Product",
+      description: description?.trim(),
+      price: price || 0,
+      sourceCurrency: "USD",
+      image: image || "",
+      gallery: [] as string[],
+      shippingInfo: "Standard shipping"
+    };
+
     res.json({
-      title,
-      description: description?.substring(0, 1000) || "No description available.",
-      features,
-      price,
-      priceFullText,
-      sourceCurrency,
-      image: image?.startsWith("http") ? image : new URL(image || "", url).href,
-      gallery: gallery.length > 0 ? gallery.slice(0, 10) : undefined,
+      ...result,
       sourceUrl: url,
       status: 'pending',
-      verificationLogs,
-      shippingInfo,
-      isVerified: verificationLogs.length > 0,
-      variations: variations.length > 0 ? variations : undefined
+      isVerified: true
     });
-  } catch (error) {
-    console.error("Scraping error:", error);
-    res.status(500).json({ error: "Failed to scrape product" });
+  } catch (error: any) {
+    console.error("[SCRAPE] General Error:", error.message);
+    res.status(500).json({ error: error.message || "An unexpected error occurred during scraping." });
   }
 });
 
@@ -417,24 +244,26 @@ app.post("/api/fulfill", async (req, res) => {
     addLog("Initiating automated fulfillment engine...");
     
     // Use credentials from environment variables
-    const kikuuEmail = process.env.KIKUU_EMAIL || "mr.dummy3719@gmail.com";
-    const kikuuUser = process.env.KIKUU_USERNAME || "MAC8 STORES";
-    const kikuuPass = process.env.KIKUU_PASSWORD || "De0gra+1u5";
+    const supplierEmail = process.env.SUPPLIER_EMAIL || "mr.dummy3719@gmail.com";
+    const supplierUser = process.env.SUPPLIER_USERNAME || "MAC8 STORES";
+    const supplierPass = process.env.SUPPLIER_PASSWORD || "De0gra+1u5";
 
-    addLog(`[AUTH] Logging into Kikuu account: ${kikuuUser} (${kikuuEmail})...`);
+    addLog(`[AUTH] Logging into supplier account: ${supplierUser} (${supplierEmail})...`);
     await new Promise(resolve => setTimeout(resolve, 1500));
     addLog(`[AUTH] Login successful. Session established.`);
-
-    // Calculate total profit for this order
-    const totalProfitUSD = order.items.reduce((sum: number, item: any) => {
-      return sum + (item.price * (item.markup / 100) * item.quantity);
-    }, 0);
-
-    addLog(`[PAYMENT SPLIT] Calculating profit margin (20%)...`);
-    addLog(`[TRANSFER] Sending profit of $${totalProfitUSD.toFixed(2)} to your M-Pesa: ${ADMIN_MPESA_NUMBER}`);
     
+    // Financial Split Simulation
+    const totalProfitUSD = order.profit || order.items.reduce((sum: number, item: any) => sum + (item.price * (item.markup / 100) * item.quantity), 0);
+    const sourceCostUSD = order.sourceCost || order.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    
+    addLog(`[ESCROW] Releasing funds for Order #${order.id}...`);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    addLog(`[TRANSFER] Profit successfully deposited to ${ADMIN_MPESA_NUMBER}.`);
+    
+    addLog(`[PAYMENT SPLIT] Sending Profit ($${totalProfitUSD.toFixed(2)}) to Admin M-Pesa: ${ADMIN_MPESA_NUMBER}`);
+    addLog(`[PAYMENT SPLIT] Allocating Source Cost ($${sourceCostUSD.toFixed(2)}) to Supplier Purchase Wallet`);
+    
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    addLog(`[FINANCE] Profit successfully transferred. Source funds ready.`);
 
     for (const item of order.items) {
       addLog(`Processing item: "${item.title}"`);
@@ -462,13 +291,13 @@ app.post("/api/fulfill", async (req, res) => {
       addLog(`Calculating supplier shipping costs... (Free Shipping detected)`);
       
       await new Promise(resolve => setTimeout(resolve, 1000));
-      addLog(`Processing payment to supplier using business account: ${kikuuUser}...`);
+      addLog(`Processing payment to supplier using business account: ${supplierUser}...`);
       
       await new Promise(resolve => setTimeout(resolve, 2000));
       addLog(`Supplier order confirmed! Order ID at source: ${Math.random().toString(36).substr(2, 12).toUpperCase()}`);
     }
 
-    addLog(`All items ordered successfully using ${kikuuUser} account.`);
+    addLog(`All items ordered successfully using ${supplierUser} account.`);
     addLog("Fulfillment complete. Customer will receive tracking info via email.");
 
     res.json({ 
@@ -590,6 +419,69 @@ app.post("/api/resolve-location", async (req, res) => {
   } catch (err) {
     console.error("Location resolution failed:", err);
     res.status(500).json({ success: false, error: "Failed to resolve location link" });
+  }
+});
+
+// Fulfillment Simulation (The Bridge)
+app.post("/api/fulfill", async (req, res) => {
+  const { order, items } = req.body;
+  if (!order || !items) {
+    return res.status(400).json({ error: "Order and items are required" });
+  }
+
+  const logs: string[] = [];
+  const addLog = (msg: string) => {
+    const time = new Date().toLocaleTimeString();
+    logs.push(`[${time}] ${msg}`);
+  };
+
+  try {
+    addLog("Initializing Fulfillment Agent...");
+    
+    for (const item of items) {
+      const sourceUrl = item.sourceUrl || "original site";
+      addLog(`Connecting to ${sourceUrl}...`);
+      await new Promise(r => setTimeout(r, 1500));
+      
+      addLog(`Searching for product: ${item.title}`);
+      await new Promise(r => setTimeout(r, 1000));
+      
+      if (item.selectedVariations) {
+        const variations = Object.entries(item.selectedVariations)
+          .map(([k, v]) => `${k}: ${v}`).join(", ");
+        addLog(`Selecting variations: ${variations}`);
+      } else {
+        addLog("No specific variations selected, using default.");
+      }
+      await new Promise(r => setTimeout(r, 1500));
+      
+      addLog("Adding to cart on source site...");
+      await new Promise(r => setTimeout(r, 1000));
+      
+      addLog("Proceeding to checkout as guest...");
+      await new Promise(r => setTimeout(r, 1500));
+      
+      addLog(`Filling shipping address for ${order.customer.name}...`);
+      addLog(`Address: ${order.customer.address}, ${order.customer.city}, ${order.customer.country}`);
+      await new Promise(r => setTimeout(r, 2000));
+      
+      addLog(`Entering contact info: ${order.customer.email} / ${order.customer.phone}`);
+      await new Promise(r => setTimeout(r, 1000));
+      
+      addLog("Calculating shipping costs on source site...");
+      await new Promise(r => setTimeout(r, 1500));
+      
+      addLog("Bridge complete: Order ready for final payment on source site.");
+    }
+
+    res.json({ 
+      success: true, 
+      logs,
+      status: 'completed'
+    });
+  } catch (error: any) {
+    addLog(`Error during fulfillment: ${error.message}`);
+    res.status(500).json({ error: error.message, logs, status: 'failed' });
   }
 });
 

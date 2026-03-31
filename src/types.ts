@@ -23,6 +23,7 @@ export interface Product {
   variations?: Variation[];
   verificationLogs?: string[];
   shippingInfo?: string;
+  isVerified?: boolean;
 }
 
 export interface CustomerInfo {
@@ -40,6 +41,8 @@ export interface Order {
   items: CartItem[];
   customer: CustomerInfo;
   total: number;
+  sourceCost: number;
+  profit: number;
   currency: string;
   status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled';
   automationStatus?: 'idle' | 'processing' | 'completed' | 'failed';

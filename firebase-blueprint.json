@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A dropshipping product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "price": { "type": "number" },
+        "sourceCurrency": { "type": "string" },
+        "image": { "type": "string" },
+        "gallery": { "type": "array", "items": { "type": "string" } },
+        "sourceUrl": { "type": "string" },
+        "markup": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved"] },
+        "variations": { "type": "array", "items": { "$ref": "Variation" } },
+        "verificationLogs": { "type": "array", "items": { "type": "string" } },
+        "shippingInfo": { "type": "string" }
+      },
+      "required": ["id", "title", "price", "sourceCurrency", "image", "sourceUrl", "markup", "status"]
+    },
+    "Variation": {
+      "title": "Variation",
+      "description": "Product variation like size or color",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "options": { "type": "array", "items": { "$ref": "VariationOption" } }
+      },
+      "required": ["name", "options"]
+    },
+    "VariationOption": {
+      "title": "VariationOption",
+      "description": "An option for a variation",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "image": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A customer order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "CartItem" } },
+        "customer": { "$ref": "CustomerInfo" },
+        "total": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "paid", "fulfilled", "shipped", "delivered", "cancelled"] },
+        "automationStatus": { "type": "string", "enum": ["idle", "processing", "completed", "failed"] },
+        "automationLog": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string" },
+        "stripeSessionId": { "type": "string" }
+      },
+      "required": ["id", "items", "customer", "total", "currency", "status", "createdAt"]
+    },
+    "CartItem": {
+      "title": "CartItem",
+      "description": "A product in a cart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cartId": { "type": "string" },
+        "quantity": { "type": "number" },
+        "selectedVariations": { "type": "object" }
+      },
+      "required": ["id", "cartId", "quantity"]
+    },
+    "CustomerInfo": {
+      "title": "CustomerInfo",
+      "description": "Customer contact and shipping information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "country": { "type": "string" },
+        "zip": { "type": "string" }
+      },
+      "required": ["name", "email", "phone", "address", "city", "country"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Collection of dropshipping products"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of customer orders"
+    }
+  }
+}
