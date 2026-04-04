@@ -1,12 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import React, { useState, useEffect, Component, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, CheckCircle2, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, CartItem, CustomerInfo, Order, ExchangeRates } from './types';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer } from 'firebase/firestore';
+import { Product, CartItem, CustomerInfo, Order, ExchangeRates, Chat, ChatMessage } from './types';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer, addDoc, serverTimestamp, where, limit, getDocs, getDoc } from 'firebase/firestore';
 import { signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -293,7 +293,7 @@ const ProductModal = ({
       >
         <div className="md:w-1/2 h-64 md:h-auto relative bg-gray-50">
           <img 
-            src={currentImage} 
+            src={currentImage || null} 
             alt={product.title} 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
@@ -308,7 +308,16 @@ const ProductModal = ({
         
         <div className="md:w-1/2 p-8 md:p-12 overflow-y-auto flex flex-col">
           <div className="flex justify-between items-start mb-6">
-            <div className="flex-1">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">{product.category || 'General'}</span>
+                {product.sourceUrl.includes('alibaba.com') && (
+                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
+                    <img src="https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Alibaba.com_logo.svg/1200px-Alibaba.com_logo.svg.png" alt={null} className="h-2" referrerPolicy="no-referrer" />
+                    Alibaba Source
+                  </span>
+                )}
+              </div>
               {isAdmin && onConfirm ? (
                 <div className="space-y-4">
                   <input
@@ -364,12 +373,15 @@ const ProductModal = ({
                   Key Features
                 </h4>
                 <ul className="grid grid-cols-1 gap-3">
-                  {product.features.map((feature, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-gray-600">
-                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
+                  {product.features.map((feature, i) => {
+                    const isMOQ = feature.toLowerCase().includes('moq') || feature.toLowerCase().includes('min. order');
+                    return (
+                      <li key={i} className={cn("flex items-start gap-3 text-sm p-2 rounded-lg", isMOQ ? "bg-orange-50 text-orange-700 border border-orange-100" : "text-gray-600")}>
+                        {isMOQ ? <Package className="w-4 h-4 mt-0.5" /> : <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />}
+                        <span className={cn(isMOQ && "font-bold")}>{feature}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}
@@ -413,7 +425,7 @@ const ProductModal = ({
                                           }
                                         }}
                                       >
-                                        <img src={opt.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        <img src={opt.image || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                       </div>
                                     ) : (
                                       <div className={cn(
@@ -490,7 +502,7 @@ const ProductModal = ({
                       )}
                       onClick={() => onConfirm && setCurrentImage(img)}
                     >
-                      <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <img src={img || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       {onConfirm && (
                         <div className={cn(
                           "absolute inset-0 bg-indigo-600/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity",
@@ -580,6 +592,181 @@ const ProductModal = ({
   );
 };
 
+const ChatWidget = ({ user }: { user: User | null }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [chat, setChat] = useState<Chat | null>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!user || !isOpen) return;
+
+    const chatId = user.uid;
+    const chatRef = doc(db, 'chats', chatId);
+
+    // Ensure chat exists
+    const setupChat = async () => {
+      const chatDoc = await getDocFromServer(chatRef);
+      if (!chatDoc.exists()) {
+        const newChat: Chat = {
+          id: chatId,
+          buyerId: user.uid,
+          buyerName: user.displayName || user.email?.split('@')[0] || 'Guest',
+          buyerEmail: user.email || undefined,
+          unreadCountSeller: 0,
+          unreadCountBuyer: 0,
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(chatRef, newChat);
+      }
+    };
+    setupChat();
+
+    const unsubChat = onSnapshot(chatRef, (doc) => {
+      if (doc.exists()) {
+        setChat(doc.data() as Chat);
+        // Reset unread count for buyer when they open the chat
+        if (doc.data().unreadCountBuyer > 0) {
+          updateDoc(chatRef, { unreadCountBuyer: 0 });
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `chats/${chatId}`);
+    });
+
+    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('timestamp', 'asc'), limit(50));
+    const unsubMessages = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage));
+      setMessages(msgs);
+      setTimeout(() => scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight), 100);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `chats/${chatId}/messages`);
+    });
+
+    return () => {
+      unsubChat();
+      unsubMessages();
+    };
+  }, [user, isOpen]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !newMessage.trim()) return;
+
+    const chatId = user.uid;
+    const messageData = {
+      senderId: user.uid,
+      senderName: user.displayName || user.email?.split('@')[0] || 'Guest',
+      text: newMessage.trim(),
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    setNewMessage('');
+    
+    try {
+      await addDoc(collection(db, 'chats', chatId, 'messages'), messageData);
+      await updateDoc(doc(db, 'chats', chatId), {
+        lastMessage: newMessage.trim(),
+        lastMessageTimestamp: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        unreadCountSeller: (chat?.unreadCountSeller || 0) + 1
+      });
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
+  };
+
+  if (!user) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-[100]">
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="bg-white rounded-3xl shadow-2xl w-80 sm:w-96 h-[500px] flex flex-col overflow-hidden border border-gray-100 mb-4"
+          >
+            <div className="bg-indigo-600 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Store Support</h3>
+                  <p className="text-[10px] opacity-80">We usually reply in minutes</p>
+                </div>
+              </div>
+              <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+              {messages.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3 text-indigo-600">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs text-gray-500 font-medium">Start a conversation with us!</p>
+                </div>
+              )}
+              {messages.map((msg, i) => (
+                <div key={msg.id || i} className={cn("flex flex-col", msg.senderId === user.uid ? "items-end" : "items-start")}>
+                  <div className={cn(
+                    "max-w-[80%] p-3 rounded-2xl text-sm shadow-sm",
+                    msg.senderId === user.uid ? "bg-indigo-600 text-white rounded-tr-none" : "bg-white text-gray-900 rounded-tl-none border border-gray-100"
+                  )}>
+                    {msg.text}
+                  </div>
+                  <span className="text-[9px] text-gray-400 mt-1 px-1">
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-gray-100 flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+              <button 
+                type="submit"
+                disabled={!newMessage.trim()}
+                className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-all relative group"
+      >
+        {isOpen ? <X className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
+        {!isOpen && chat && chat.unreadCountBuyer > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
+            {chat.unreadCountBuyer}
+          </span>
+        )}
+        <div className="absolute right-full mr-4 bg-gray-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          Chat with us
+        </div>
+      </button>
+    </div>
+  );
+};
+
 const AuthModal = ({ 
   onClose,
   onSuccess
@@ -622,7 +809,11 @@ const AuthModal = ({
       onClose();
     } catch (err: any) {
       console.error("Auth error:", err);
-      setError(err.message || "An error occurred during authentication");
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Email/Password authentication is not enabled in your Firebase project. Please enable it in the Firebase Console under Authentication > Sign-in method.");
+      } else {
+        setError(err.message || "An error occurred during authentication");
+      }
     } finally {
       setLoading(false);
     }
@@ -630,12 +821,30 @@ const AuthModal = ({
 
   const handleGoogleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      // Check if user profile exists, if not create one
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          role: 'buyer', // Default role for Google login
+          createdAt: new Date().toISOString()
+        });
+      }
+
       onSuccess();
       onClose();
     } catch (err: any) {
       console.error("Google login error:", err);
-      setError(err.message || "An error occurred during Google login");
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Google authentication is not enabled in your Firebase project. Please enable it in the Firebase Console under Authentication > Sign-in method.");
+      } else {
+        setError(err.message || "An error occurred during Google login");
+      }
     }
   };
 
@@ -839,7 +1048,12 @@ const Navbar = ({
             {user ? (
               <div className="flex items-center gap-3">
                 {user.photoURL ? (
-                  <img src={user.photoURL} alt={user.displayName || ""} className="w-8 h-8 rounded-full border border-gray-200" />
+                  <img 
+                    src={user.photoURL || null} 
+                    alt={user.displayName || ""} 
+                    className="w-8 h-8 rounded-full border border-gray-200" 
+                    referrerPolicy="no-referrer"
+                  />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs">
                     {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
@@ -894,6 +1108,184 @@ const Navbar = ({
 };
 
 // --- Pages ---
+
+const AdminChat = ({ user }: { user: User | null }) => {
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'chats'), orderBy('updatedAt', 'desc'), limit(50));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const chatList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Chat));
+      setChats(chatList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'chats');
+    });
+
+    return () => unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!selectedChat) return;
+
+    const q = query(collection(db, 'chats', selectedChat.id, 'messages'), orderBy('timestamp', 'asc'), limit(100));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage));
+      setMessages(msgs);
+      setTimeout(() => scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight), 100);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `chats/${selectedChat.id}/messages`);
+    });
+
+    // Mark as read
+    if (selectedChat.unreadCountSeller > 0) {
+      updateDoc(doc(db, 'chats', selectedChat.id), { unreadCountSeller: 0 });
+    }
+
+    return () => unsub();
+  }, [selectedChat]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedChat || !newMessage.trim()) return;
+
+    const messageData = {
+      senderId: user.uid,
+      senderName: 'Store Support',
+      text: newMessage.trim(),
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    setNewMessage('');
+    
+    try {
+      await addDoc(collection(db, 'chats', selectedChat.id, 'messages'), messageData);
+      await updateDoc(doc(db, 'chats', selectedChat.id), {
+        lastMessage: newMessage.trim(),
+        lastMessageTimestamp: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        unreadCountBuyer: (selectedChat.unreadCountBuyer || 0) + 1
+      });
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex h-[600px]">
+      {/* Chat List */}
+      <div className="w-1/3 border-r border-gray-100 flex flex-col">
+        <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+          <h3 className="font-bold text-gray-900">Conversations</h3>
+          <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Recent Messages</p>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {chats.length === 0 && (
+            <div className="p-8 text-center">
+              <MessageSquare className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+              <p className="text-xs text-gray-400">No active chats</p>
+            </div>
+          )}
+          {chats.map(chat => (
+            <button
+              key={chat.id}
+              onClick={() => setSelectedChat(chat)}
+              className={cn(
+                "w-full p-4 text-left border-b border-gray-50 transition-all hover:bg-gray-50 flex items-start gap-3",
+                selectedChat?.id === chat.id ? "bg-indigo-50/50 border-l-4 border-l-indigo-600" : ""
+              )}
+            >
+              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold shrink-0">
+                {chat.buyerName[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-start">
+                  <span className="font-bold text-sm text-gray-900 truncate">{chat.buyerName}</span>
+                  <span className="text-[9px] text-gray-400 whitespace-nowrap">
+                    {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleDateString() : ''}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 truncate mt-0.5">{chat.lastMessage || 'No messages yet'}</p>
+                {chat.unreadCountSeller > 0 && (
+                  <span className="inline-block bg-indigo-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-2">
+                    {chat.unreadCountSeller} new
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat Window */}
+      <div className="flex-1 flex flex-col bg-gray-50/30">
+        {selectedChat ? (
+          <>
+            <div className="p-4 bg-white border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
+                  {selectedChat.buyerName[0].toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-gray-900">{selectedChat.buyerName}</h3>
+                  <p className="text-[10px] text-gray-400">{selectedChat.buyerEmail || 'No email provided'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+              {messages.map((msg, i) => (
+                <div key={msg.id || i} className={cn("flex flex-col", msg.senderId === user?.uid ? "items-end" : "items-start")}>
+                  <div className={cn(
+                    "max-w-[70%] p-3 rounded-2xl text-sm shadow-sm",
+                    msg.senderId === user?.uid ? "bg-indigo-600 text-white rounded-tr-none" : "bg-white text-gray-900 rounded-tl-none border border-gray-100"
+                  )}>
+                    {msg.text}
+                  </div>
+                  <span className="text-[9px] text-gray-400 mt-1 px-1">
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-gray-100 flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type your reply..."
+                className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+              <button 
+                type="submit"
+                disabled={!newMessage.trim()}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Reply
+              </button>
+            </form>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-12">
+            <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 mb-6">
+              <MessageSquare className="w-10 h-10" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Select a conversation</h3>
+            <p className="text-gray-500 max-w-xs">Choose a customer from the list on the left to start chatting.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Storefront = ({ 
   products, 
@@ -1204,7 +1596,7 @@ const Storefront = ({
                   onClick={() => setSelectedProduct(product)}
                 >
                   <img
-                    src={product.image}
+                    src={product.image || null}
                     alt={product.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     referrerPolicy="no-referrer"
@@ -1330,7 +1722,7 @@ const AdminPanel = ({
   });
   const [importPreview, setImportPreview] = useState<Product | null>(null);
   const [bulkResults, setBulkResults] = useState<{url: string, status: 'success' | 'error', message?: string}[]>([]);
-  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'tracking'>('overview');
+  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'tracking' | 'messages'>('overview');
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
 
@@ -1575,6 +1967,12 @@ const AdminPanel = ({
             className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", tab === 'tracking' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
           >
             Tracking
+          </button>
+          <button 
+            onClick={() => setTab('messages')}
+            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", tab === 'messages' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            Messages
           </button>
         </div>
       </div>
@@ -1840,85 +2238,151 @@ const AdminPanel = ({
           <div className="bg-white rounded-3xl border border-gray-200 p-8 shadow-sm">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600">
                   <Search className="w-6 h-6" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">Product Scraper</h2>
-                  <p className="text-sm text-gray-500">Import products from any competitor URL automatically.</p>
+                  <p className="text-sm text-gray-500">Import products from Alibaba, Amazon, or any competitor URL.</p>
                 </div>
               </div>
-              <div className="flex bg-gray-100 p-1 rounded-xl">
-                <button 
-                  onClick={() => setIsBulk(false)}
-                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", !isBulk ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
-                >
-                  Single URL
-                </button>
-                <button 
-                  onClick={() => setIsBulk(true)}
-                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", isBulk ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
-                >
-                  Bulk Import
-                </button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-50 rounded-lg border border-orange-100">
+                  <img src="https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Alibaba.com_logo.svg/1200px-Alibaba.com_logo.svg.png" alt="Alibaba" className="h-4 object-contain opacity-80" referrerPolicy="no-referrer" />
+                  <span className="text-[10px] font-bold text-orange-700 uppercase tracking-tighter">Ready</span>
+                </div>
+                <div className="flex bg-gray-100 p-1 rounded-xl">
+                  <button 
+                    onClick={() => setIsBulk(false)}
+                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", !isBulk ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+                  >
+                    Single URL
+                  </button>
+                  <button 
+                    onClick={() => setIsBulk(true)}
+                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", isBulk ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+                  >
+                    Bulk Import
+                  </button>
+                </div>
               </div>
             </div>
 
-            <form onSubmit={handleImport} className="grid grid-cols-1 gap-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                    {isBulk ? "Product URLs (one per line)" : "Product URL"}
-                  </label>
-                  {isBulk ? (
-                    <textarea
-                      value={bulkUrls}
-                      onChange={(e) => setBulkUrls(e.target.value)}
-                      placeholder="https://example.com/product/1&#10;https://example.com/product/2"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all h-32 font-mono text-sm"
-                      required
-                    />
-                  ) : (
-                    <input
-                      type="url"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://example.com/product/123"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                      required={!isBulk}
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Default Profit Margin (%)</label>
-                  <input
-                    type="number"
-                    value={markup}
-                    onChange={(e) => setMarkup(Number(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                    min="0"
-                    required
-                  />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+              <div className="lg:col-span-2">
+                <form onSubmit={handleImport} className="grid grid-cols-1 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                        {isBulk ? "Product URLs (one per line)" : "Product URL"}
+                      </label>
+                      {isBulk ? (
+                        <textarea
+                          value={bulkUrls}
+                          onChange={(e) => setBulkUrls(e.target.value)}
+                          placeholder="https://www.alibaba.com/product-detail/..."
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all h-32 font-mono text-sm"
+                          required
+                        />
+                      ) : (
+                        <input
+                          type="url"
+                          value={url}
+                          onChange={(e) => setUrl(e.target.value)}
+                          placeholder="https://www.alibaba.com/product-detail/..."
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                          required={!isBulk}
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Default Profit Margin (%)</label>
+                      <input
+                        type="number"
+                        value={markup}
+                        onChange={(e) => setMarkup(Number(e.target.value))}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                        min="0"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        {isBulk ? "Processing Bulk Import..." : "Analyzing Website Structure..."}
+                      </>
+                    ) : (
+                      <>
+                        <Package className="w-5 h-5" />
+                        {isBulk ? "Start Bulk Import" : "Scrape & Import Product"}
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-orange-50/50 rounded-2xl p-6 border border-orange-100 h-fit">
+                <h3 className="text-sm font-bold text-orange-800 mb-4 flex items-center gap-2">
+                  <Info className="w-4 h-4" />
+                  Alibaba Import Guide
+                </h3>
+                <ul className="space-y-3 text-[11px] text-orange-700">
+                  <li className="flex gap-2">
+                    <span className="font-bold">1.</span>
+                    <span>Use the full product detail URL, not the search results.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold">2.</span>
+                    <span>The system automatically detects price ranges and picks the lowest base price.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold">3.</span>
+                    <span>MOQ (Minimum Order Quantity) is extracted and added to product features.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold">4.</span>
+                    <span>All variation images (colors, sizes) are imported for your storefront.</span>
+                  </li>
+                </ul>
+                <div className="mt-6 pt-6 border-t border-orange-100">
+                  <p className="text-[10px] text-orange-600 italic">Tip: Alibaba prices are often negotiable. You can adjust the imported price in the Inventory tab.</p>
                 </div>
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    {isBulk ? "Processing Bulk Import..." : "Analyzing Website Structure..."}
-                  </>
-                ) : (
-                  <>
-                    <Package className="w-5 h-5" />
-                    {isBulk ? "Start Bulk Import" : "Scrape & Import Product"}
-                  </>
-                )}
-              </button>
-            </form>
+            </div>
+
+            <div className="mt-12">
+              <h3 className="text-sm font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-indigo-600" />
+                Popular Alibaba Categories
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { name: 'Consumer Electronics', url: 'https://www.alibaba.com/Consumer-Electronics_p44' },
+                  { name: 'Home & Garden', url: 'https://www.alibaba.com/Home-Garden_p15' },
+                  { name: 'Apparel & Accessories', url: 'https://www.alibaba.com/Apparel_p3' },
+                  { name: 'Beauty & Personal Care', url: 'https://www.alibaba.com/Beauty-Personal-Care_p18' }
+                ].map((cat, i) => (
+                  <a 
+                    key={i}
+                    href={cat.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:bg-white transition-all text-center"
+                  >
+                    <div className="text-xs font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">{cat.name}</div>
+                    <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-center gap-1">
+                      Browse on Alibaba <ExternalLink className="w-2 h-2" />
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
 
             {bulkResults.length > 0 && (
               <div className="mt-8 space-y-2">
@@ -2023,7 +2487,7 @@ const AdminPanel = ({
             {products.filter(p => p.status === 'approved').map(p => (
               <div key={p.id} className="bg-white p-4 rounded-xl border border-gray-100 hover:border-indigo-200 transition-colors">
                 <div className="flex items-center gap-4">
-                  <img src={p.image} className="w-16 h-16 object-cover rounded-lg" referrerPolicy="no-referrer" />
+                  <img src={p.image || null} className="w-16 h-16 object-cover rounded-lg" referrerPolicy="no-referrer" />
                   <div className="flex-1 min-w-0">
                     <h4 className="font-semibold text-gray-900 truncate">{p.title}</h4>
                     {p.variations && p.variations.length > 0 && (
@@ -2117,7 +2581,7 @@ const AdminPanel = ({
                 <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6">
                   <div className="w-full md:w-48 space-y-4">
                     <div className="relative group">
-                      <img src={p.image} className="w-full h-48 object-cover rounded-xl shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
+                      <img src={p.image || null} className="w-full h-48 object-cover rounded-xl shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
                         <span className="text-white text-[10px] font-bold uppercase tracking-widest">Primary Image</span>
                       </div>
@@ -2136,7 +2600,7 @@ const AdminPanel = ({
                                 p.image === img ? "border-indigo-600 shadow-sm scale-105" : "border-transparent opacity-50 hover:opacity-100"
                               )}
                             >
-                              <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              <img src={img || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             </button>
                           ))}
                         </div>
@@ -2705,6 +3169,17 @@ const AdminPanel = ({
         </motion.div>
       )}
 
+      {tab === 'messages' && (
+        <motion.div 
+          key="messages"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+        >
+          <AdminChat user={user} />
+        </motion.div>
+      )}
+
       {importPreview && (
         <ProductModal
           product={importPreview}
@@ -3080,7 +3555,7 @@ const CartPage = ({
                 <div className="space-y-6">
                   {cart.map(item => (
                     <div key={item.cartId} className="flex gap-6 bg-white p-6 rounded-2xl border border-gray-100">
-                      <img src={item.image} className="w-24 h-24 object-cover rounded-xl" referrerPolicy="no-referrer" />
+                      <img src={item.image || null} className="w-24 h-24 object-cover rounded-xl" referrerPolicy="no-referrer" />
                       <div className="flex-1">
                         <h3 className="font-bold text-gray-900 mb-1">{item.title}</h3>
                         {item.selectedVariations && Object.entries(item.selectedVariations).length > 0 && (
@@ -3408,32 +3883,40 @@ export default function App() {
   const [rates, setRates] = useState<ExchangeRates>({ USD: 1 });
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    let unsubscribeUserDoc = () => {};
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       setIsAuthReady(true);
+      
       if (u) {
-        // Check if user is the hardcoded admin or has seller role in Firestore
+        // Check if user is the hardcoded admin
         if (u.email === "mr.dummy3719@gmail.com") {
           setIsAdmin(true);
         } else {
-          try {
-            const userDoc = await getDocFromServer(doc(db, 'users', u.uid));
-            if (userDoc.exists()) {
-              const userData = userDoc.data();
+          // Listen to user document for role changes (e.g., after registration)
+          unsubscribeUserDoc = onSnapshot(doc(db, 'users', u.uid), (docSnap) => {
+            if (docSnap.exists()) {
+              const userData = docSnap.data();
               setIsAdmin(userData.role === 'seller');
             } else {
               setIsAdmin(false);
             }
-          } catch (error) {
-            console.error("Error fetching user role:", error);
+          }, (error) => {
+            console.error("Error listening to user role:", error);
             setIsAdmin(false);
-          }
+          });
         }
       } else {
         setIsAdmin(false);
+        unsubscribeUserDoc();
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeUserDoc();
+    };
   }, []);
 
   useEffect(() => {
@@ -3599,6 +4082,8 @@ export default function App() {
               <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} user={user} />} />
             </Routes>
           </main>
+
+          {user && !isAdmin && <ChatWidget user={user} />}
           
           <footer className="border-t border-gray-100 py-12 mt-24">
             <div className="max-w-7xl mx-auto px-4">

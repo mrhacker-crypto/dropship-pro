@@ -84,6 +84,12 @@ app.post("/api/scrape", async (req, res) => {
         
         URL: ${url}
         
+        SPECIAL INSTRUCTIONS FOR ALIBABA.COM:
+        - Alibaba often shows price ranges (e.g. $1.00 - $5.00). If a range is found, use the LOWEST price as the base price.
+        - Look for "Min. Order" or "MOQ" and include it in the features.
+        - Look for the unit (e.g. "Piece", "Set", "Bag") and include it in the title or features.
+        - Capture all variation images (often found in the "Options" or "Variations" section).
+        
         META TAGS:
         ${metaTags}
         

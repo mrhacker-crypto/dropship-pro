@@ -50,8 +50,9 @@ service cloud.firestore {
       return isAuthenticated() &&
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          (request.auth.token.email == "mr.dummy3719@gmail.com" && request.auth.token.email_verified == true)
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller')) ||
+          (request.auth.token.email == "mr.dummy3719@gmail.com")
         );
     }
 
@@ -78,6 +79,21 @@ service cloud.firestore {
              data.items is list && data.items.size() > 0 && data.items.size() < 50;
     }
 
+    function isValidChat(data) {
+      return data.keys().hasOnly(['id', 'buyerId', 'buyerName', 'buyerEmail', 'lastMessage', 'lastMessageTimestamp', 'unreadCountSeller', 'unreadCountBuyer', 'updatedAt']) &&
+             data.keys().hasAll(['id', 'buyerId', 'buyerName', 'updatedAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.buyerId is string && data.buyerId.size() > 0 && data.buyerId.size() < 100 &&
+             data.buyerName is string && data.buyerName.size() > 0 && data.buyerName.size() < 500;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasOnly(['id', 'senderId', 'senderName', 'text', 'timestamp', 'read']) &&
+             data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.senderId is string && data.senderId.size() > 0 && data.senderId.size() < 100 &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 10000;
+    }
+
     match /products/{productId} {
       allow read: if true;
       allow create: if isAdmin() && isValidProduct(request.resource.data);
@@ -92,9 +108,23 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /chats/{chatId} {
+      allow read: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidChat(request.resource.data) && chatId == request.auth.uid && request.resource.data.buyerId == request.auth.uid;
+      allow update: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid && isValidChat(request.resource.data));
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid);
+        allow create: if (isAdmin() || (isAuthenticated() && chatId == request.auth.uid)) && isValidChatMessage(request.resource.data);
+        allow update: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid && isValidChatMessage(request.resource.data));
+        allow delete: if isAdmin();
+      }
+    }
+
     match /users/{userId} {
       allow read: if isAuthenticated() && request.auth.uid == userId;
-      allow create: if isAuthenticated() && request.auth.uid == userId && request.resource.data.role == 'user';
+      allow create: if isAuthenticated() && request.auth.uid == userId && (request.resource.data.role in ['buyer', 'seller', 'user']);
       allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == userId && request.resource.data.role == resource.data.role);
     }
 

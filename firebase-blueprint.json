@@ -86,6 +86,37 @@
         "zip": { "type": "string" }
       },
       "required": ["name", "email", "phone", "address", "city", "country"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat session between a buyer and the seller",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "buyerId": { "type": "string" },
+        "buyerName": { "type": "string" },
+        "buyerEmail": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTimestamp": { "type": "string" },
+        "unreadCountSeller": { "type": "number" },
+        "unreadCountBuyer": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "buyerId", "buyerName", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A message in a chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "text", "timestamp"]
     }
   },
   "firestore": {
@@ -96,6 +127,14 @@
     "/orders/{orderId}": {
       "schema": "Order",
       "description": "Collection of customer orders"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Collection of chat sessions"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Subcollection of messages for a chat"
     }
   }
 }

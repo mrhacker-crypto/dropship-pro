@@ -63,3 +63,24 @@ export interface CartItem extends Product {
   quantity: number;
   selectedVariations?: { [key: string]: string };
 }
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: string;
+  read: boolean;
+}
+
+export interface Chat {
+  id: string;
+  buyerId: string;
+  buyerName: string;
+  buyerEmail?: string;
+  lastMessage?: string;
+  lastMessageTimestamp?: string;
+  unreadCountSeller: number;
+  unreadCountBuyer: number;
+  updatedAt: string;
+}
