@@ -1,5 +1,5 @@
 {
-  "name": "DropShip Pro",
-  "description": "Automated dropshipping platform with product importing, markup management, and fulfillment simulation.",
+  "name": "MAC8 Marketplace",
+  "description": "Premium e-commerce marketplace in Dar es Salaam with WhatsApp ordering, seller signup, and advanced product filtering.",
   "requestFramePermissions": ["geolocation"]
 }

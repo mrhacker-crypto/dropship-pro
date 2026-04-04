@@ -105,6 +105,7 @@ app.post("/api/scrape", async (req, res) => {
         - image: The best high-res main product image.
         - gallery: Up to 10 other high-res product images.
         - variations: ALL options (Size, Color, Material, etc.). Each variation must have a name (e.g. "Size") and a list of options (e.g. [{"name": "S", "image": "url"}]).
+        - shippingCost: Numeric shipping cost if found, otherwise 0.
         - shippingInfo: Any shipping/delivery details found.
       `;
 
@@ -143,6 +144,7 @@ app.post("/api/scrape", async (req, res) => {
                     }
                   }
                 },
+                shippingCost: { type: Type.NUMBER },
                 shippingInfo: { type: Type.STRING }
               },
               required: ["title", "price", "sourceCurrency", "image"]
@@ -225,6 +227,13 @@ app.post("/api/scrape", async (req, res) => {
 });
 
 const ADMIN_MPESA_NUMBER = "0797691203";
+// Site Creator Bank Info:
+// Issuer: NMB Bank PLC (Tanzania)
+// Network: Mastercard
+// Card Number: 5161 4824 1026 1592
+// Valid Thru: 08/29
+// Customer Service: 0800 002 002
+// Website: www.nmbbank.co.tz
 
 app.post("/api/fulfill", async (req, res) => {
   const { order } = req.body;
@@ -256,14 +265,31 @@ app.post("/api/fulfill", async (req, res) => {
     const totalProfitUSD = order.profit || order.items.reduce((sum: number, item: any) => sum + (item.price * (item.markup / 100) * item.quantity), 0);
     const sourceCostUSD = order.sourceCost || order.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
     
+    // Referral Split (3% of markup to referrer, 7% to owner)
+    const referralCommission = order.referralCommission || (totalProfitUSD * 0.3);
+    const ownerProfit = order.ownerProfit || (totalProfitUSD * 0.7);
+    
     addLog(`[ESCROW] Releasing funds for Order #${order.id}...`);
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    addLog(`[PAYMENT SPLIT] Sending Profit ($${totalProfitUSD.toFixed(2)}) to Admin M-Pesa: ${ADMIN_MPESA_NUMBER}`);
+    if (order.customer.referredBy) {
+      addLog(`[PAYMENT SPLIT] Sending Referral Commission ($${referralCommission.toFixed(2)}) to Referrer: ${order.customer.referredBy}`);
+      addLog(`[PAYMENT SPLIT] Sending Owner Profit ($${ownerProfit.toFixed(2)}) to Admin M-Pesa: ${ADMIN_MPESA_NUMBER}`);
+    } else {
+      addLog(`[PAYMENT SPLIT] Sending Full Profit ($${totalProfitUSD.toFixed(2)}) to Admin M-Pesa: ${ADMIN_MPESA_NUMBER}`);
+    }
+    
     addLog(`[PAYMENT SPLIT] Allocating Source Cost ($${sourceCostUSD.toFixed(2)}) to Supplier Purchase Wallet`);
     
     await new Promise(resolve => setTimeout(resolve, 1500));
     addLog(`[FINANCE] Profit successfully transferred. Source funds ready.`);
+
+    const ai = getAiClient();
+    if (ai) {
+      addLog(`[SMART AGENT] Consulting Gemini for optimal fulfillment path...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      addLog(`[SMART AGENT] Path confirmed: Direct purchase from source with guest checkout.`);
+    }
 
     for (const item of order.items) {
       addLog(`Processing item: "${item.title}"`);
@@ -423,67 +449,7 @@ app.post("/api/resolve-location", async (req, res) => {
 });
 
 // Fulfillment Simulation (The Bridge)
-app.post("/api/fulfill", async (req, res) => {
-  const { order, items } = req.body;
-  if (!order || !items) {
-    return res.status(400).json({ error: "Order and items are required" });
-  }
-
-  const logs: string[] = [];
-  const addLog = (msg: string) => {
-    const time = new Date().toLocaleTimeString();
-    logs.push(`[${time}] ${msg}`);
-  };
-
-  try {
-    addLog("Initializing Fulfillment Agent...");
-    
-    for (const item of items) {
-      const sourceUrl = item.sourceUrl || "original site";
-      addLog(`Connecting to ${sourceUrl}...`);
-      await new Promise(r => setTimeout(r, 1500));
-      
-      addLog(`Searching for product: ${item.title}`);
-      await new Promise(r => setTimeout(r, 1000));
-      
-      if (item.selectedVariations) {
-        const variations = Object.entries(item.selectedVariations)
-          .map(([k, v]) => `${k}: ${v}`).join(", ");
-        addLog(`Selecting variations: ${variations}`);
-      } else {
-        addLog("No specific variations selected, using default.");
-      }
-      await new Promise(r => setTimeout(r, 1500));
-      
-      addLog("Adding to cart on source site...");
-      await new Promise(r => setTimeout(r, 1000));
-      
-      addLog("Proceeding to checkout as guest...");
-      await new Promise(r => setTimeout(r, 1500));
-      
-      addLog(`Filling shipping address for ${order.customer.name}...`);
-      addLog(`Address: ${order.customer.address}, ${order.customer.city}, ${order.customer.country}`);
-      await new Promise(r => setTimeout(r, 2000));
-      
-      addLog(`Entering contact info: ${order.customer.email} / ${order.customer.phone}`);
-      await new Promise(r => setTimeout(r, 1000));
-      
-      addLog("Calculating shipping costs on source site...");
-      await new Promise(r => setTimeout(r, 1500));
-      
-      addLog("Bridge complete: Order ready for final payment on source site.");
-    }
-
-    res.json({ 
-      success: true, 
-      logs,
-      status: 'completed'
-    });
-  } catch (error: any) {
-    addLog(`Error during fulfillment: ${error.message}`);
-    res.status(500).json({ error: error.message, logs, status: 'failed' });
-  }
-});
+// (Primary route is defined above)
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

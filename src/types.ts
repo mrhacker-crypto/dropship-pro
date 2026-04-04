@@ -19,11 +19,12 @@ export interface Product {
   gallery?: string[];
   sourceUrl: string;
   markup: number;
+  shippingCost?: number;
   status: 'pending' | 'approved';
   variations?: Variation[];
   verificationLogs?: string[];
   shippingInfo?: string;
-  isVerified?: boolean;
+  category: string;
 }
 
 export interface CustomerInfo {
@@ -42,8 +43,10 @@ export interface Order {
   customer: CustomerInfo;
   total: number;
   sourceCost: number;
+  shippingCost?: number;
   profit: number;
   currency: string;
+  paymentMethod?: 'mpesa' | 'bank_transfer';
   status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled';
   automationStatus?: 'idle' | 'processing' | 'completed' | 'failed';
   automationLog?: string[];
