@@ -48,6 +48,7 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
+        "buyerId": { "type": "string" },
         "items": { "type": "array", "items": { "$ref": "CartItem" } },
         "customer": { "$ref": "CustomerInfo" },
         "total": { "type": "number" },
@@ -117,6 +118,19 @@
         "read": { "type": "boolean" }
       },
       "required": ["id", "senderId", "text", "timestamp"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["buyer", "seller", "admin", "user"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
     }
   },
   "firestore": {
@@ -135,6 +149,10 @@
     "/chats/{chatId}/messages/{messageId}": {
       "schema": "ChatMessage",
       "description": "Subcollection of messages for a chat"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles"
     }
   }
 }

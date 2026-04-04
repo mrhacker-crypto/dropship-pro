@@ -39,6 +39,7 @@ export interface CustomerInfo {
 
 export interface Order {
   id: string;
+  buyerId?: string;
   items: CartItem[];
   customer: CustomerInfo;
   total: number;

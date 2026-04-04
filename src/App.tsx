@@ -830,7 +830,7 @@ const AuthModal = ({
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName,
+          displayName: user.displayName || user.email?.split('@')[0] || 'Guest',
           role: 'buyer', // Default role for Google login
           createdAt: new Date().toISOString()
         });
@@ -1202,11 +1202,11 @@ const AdminChat = ({ user }: { user: User | null }) => {
               )}
             >
               <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold shrink-0">
-                {chat.buyerName[0].toUpperCase()}
+                {(chat.buyerName?.[0] || '?').toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-start">
-                  <span className="font-bold text-sm text-gray-900 truncate">{chat.buyerName}</span>
+                  <span className="font-bold text-sm text-gray-900 truncate">{chat.buyerName || 'Unknown Buyer'}</span>
                   <span className="text-[9px] text-gray-400 whitespace-nowrap">
                     {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleDateString() : ''}
                   </span>
@@ -1230,10 +1230,10 @@ const AdminChat = ({ user }: { user: User | null }) => {
             <div className="p-4 bg-white border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
-                  {selectedChat.buyerName[0].toUpperCase()}
+                  {(selectedChat.buyerName?.[0] || '?').toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-gray-900">{selectedChat.buyerName}</h3>
+                  <h3 className="font-bold text-sm text-gray-900">{selectedChat.buyerName || 'Unknown Buyer'}</h3>
                   <p className="text-[10px] text-gray-400">{selectedChat.buyerEmail || 'No email provided'}</p>
                 </div>
               </div>
@@ -3494,6 +3494,7 @@ const CartPage = ({
         
         const newOrder: Order = {
           id: data.orderId || `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+          buyerId: user.uid,
           items: [...cart],
           customer: customer,
           total: totalUSD,
@@ -3924,7 +3925,7 @@ export default function App() {
 
     const productsRef = collection(db, 'products');
     const unsubscribeProducts = onSnapshot(productsRef, (snapshot) => {
-      const p = snapshot.docs.map(doc => doc.data() as Product);
+      const p = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
       setProducts(p);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'products');
@@ -3935,7 +3936,7 @@ export default function App() {
       const ordersRef = collection(db, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
       unsubscribeOrders = onSnapshot(q, (snapshot) => {
-        const o = snapshot.docs.map(doc => doc.data() as Order);
+        const o = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
         setOrders(o);
       }, (error) => {
         handleFirestoreError(error, OperationType.LIST, 'orders');
