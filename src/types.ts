@@ -65,6 +65,13 @@ export interface Order {
   status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled';
   automationStatus?: 'idle' | 'processing' | 'completed' | 'failed';
   automationLog?: string[];
+  fulfillmentDetails?: {
+    supplierOrderId?: string;
+    trackingNumber?: string;
+    supplierName?: string;
+    lastAutomationStep?: string;
+    error?: string;
+  };
   referralCommission?: number;
   ownerProfit?: number;
   createdAt: string;

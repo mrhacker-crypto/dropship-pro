@@ -452,7 +452,7 @@ const ProductModal = ({
         <div className="md:w-1/2 h-64 md:h-auto relative bg-gray-50 shrink-0">
           <img 
             src={currentImage || null} 
-            alt={product.title} 
+            alt={`${product.title} product image`} 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
@@ -465,7 +465,7 @@ const ProductModal = ({
                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">{product.category || 'General'}</span>
                 {product.sourceUrl.includes('alibaba.com') && (
                   <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
-                    <img src="https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Alibaba.com_logo.svg/1200px-Alibaba.com_logo.svg.png" alt={null} className="h-2" referrerPolicy="no-referrer" />
+                    <img src="https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Alibaba.com_logo.svg/1200px-Alibaba.com_logo.svg.png" alt="Alibaba logo" className="h-2" referrerPolicy="no-referrer" />
                     Alibaba Source
                   </span>
                 )}
@@ -549,56 +549,51 @@ const ProductModal = ({
                     <div key={i}>
                       <span className="block text-[10px] font-bold text-gray-400 uppercase mb-3">{v.name}</span>
                               <div className="flex flex-wrap gap-2">
-                                {v.options.map((opt, j) => (
-                                  <button
-                                    key={j}
-                                    onClick={() => setSelectedVariations(prev => ({ ...prev, [v.name]: opt.name }))}
-                                    className={cn(
-                                      "group relative flex flex-col items-center gap-1.5 transition-all",
-                                      selectedVariations[v.name] === opt.name 
-                                        ? "scale-105" 
-                                        : "opacity-70 hover:opacity-100"
-                                    )}
-                                  >
-                                    {opt.image ? (
-                                      <div 
-                                        className={cn(
-                                          "w-14 h-14 rounded-xl overflow-hidden border-2 transition-all",
-                                          onConfirm ? "cursor-pointer hover:border-indigo-600" : "border-transparent",
-                                          onConfirm && currentImage === opt.image ? "border-indigo-600 shadow-md" : "border-transparent",
-                                          selectedVariations[v.name] === opt.name && !onConfirm ? "border-indigo-600 shadow-md" : ""
-                                        )}
-                                        onClick={(e) => {
-                                          if (onConfirm) {
-                                            e.stopPropagation();
-                                            setCurrentImage(opt.image!);
-                                          } else {
-                                            setSelectedVariations(prev => ({ ...prev, [v.name]: opt.name }));
-                                          }
-                                        }}
-                                      >
-                                        <img src={opt.image || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                      </div>
-                                    ) : (
-                                      <div className={cn(
-                                        "min-w-[40px] h-10 px-3 flex items-center justify-center rounded-xl text-[11px] font-bold border transition-all",
+                                  {v.options.map((opt, j) => (
+                                    <button
+                                      key={j}
+                                      onClick={() => {
+                                        setSelectedVariations(prev => ({ ...prev, [v.name]: opt.name }));
+                                        if (opt.image) {
+                                          setCurrentImage(opt.image);
+                                        }
+                                      }}
+                                      className={cn(
+                                        "group relative flex flex-col items-center gap-1.5 transition-all",
                                         selectedVariations[v.name] === opt.name 
-                                          ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" 
-                                          : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
-                                      )}>
-                                        {opt.name}
-                                      </div>
-                                    )}
-                                    {opt.image && (
-                                      <span className={cn(
-                                        "text-[8px] font-bold uppercase tracking-tight",
-                                        selectedVariations[v.name] === opt.name ? "text-indigo-600" : "text-gray-400"
-                                      )}>
-                                        {opt.name}
-                                      </span>
-                                    )}
-                                  </button>
-                                ))}
+                                          ? "scale-105" 
+                                          : "opacity-70 hover:opacity-100"
+                                      )}
+                                    >
+                                      {opt.image ? (
+                                        <div 
+                                          className={cn(
+                                            "w-14 h-14 rounded-xl overflow-hidden border-2 transition-all",
+                                            selectedVariations[v.name] === opt.name ? "border-indigo-600 shadow-md" : "border-transparent"
+                                          )}
+                                        >
+                                          <img src={opt.image || null} alt={`${opt.name} variation image`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        </div>
+                                      ) : (
+                                        <div className={cn(
+                                          "min-w-[40px] h-10 px-3 flex items-center justify-center rounded-xl text-[11px] font-bold border transition-all",
+                                          selectedVariations[v.name] === opt.name 
+                                            ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" 
+                                            : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                                        )}>
+                                          {opt.name}
+                                        </div>
+                                      )}
+                                      {opt.image && (
+                                        <span className={cn(
+                                          "text-[8px] font-bold uppercase tracking-tight",
+                                          selectedVariations[v.name] === opt.name ? "text-indigo-600" : "text-gray-400"
+                                        )}>
+                                          {opt.name}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
                               </div>
                     </div>
                   ))}
@@ -1402,7 +1397,7 @@ const ProductForm = ({
                 <div className="w-24 h-24 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden relative group">
                   {formData.image ? (
                     <>
-                      <img src={formData.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <img src={formData.image} alt={`${formData.title || 'Product'} preview image`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <Plus className="w-6 h-6 text-white" />
                       </div>
@@ -1429,7 +1424,7 @@ const ProductForm = ({
               <div className="grid grid-cols-4 gap-4">
                 {(formData.gallery || []).map((img, index) => (
                   <div key={index} className="aspect-square rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden relative group">
-                    <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <img src={img} alt={`Gallery image ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     <button
                       type="button"
                       onClick={() => removeGalleryImage(index)}
@@ -1495,7 +1490,7 @@ const ProductForm = ({
                           <div key={oIndex} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-gray-100">
                             <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden relative group shrink-0">
                               {option.image ? (
-                                <img src={option.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={option.image} alt={`${option.name} option image`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
                                 <Plus className="w-4 h-4 text-gray-300" />
                               )}
@@ -1673,7 +1668,7 @@ const SellerDashboard = ({
                 <tr key={product.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
-                      <img src={product.image} className="w-12 h-12 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                      <img src={product.image} alt={`${product.title} thumbnail`} className="w-12 h-12 rounded-xl object-cover" referrerPolicy="no-referrer" />
                       <div>
                         <div className="text-sm font-bold text-gray-900">{product.title}</div>
                         <div className="text-[10px] text-gray-400">{product.category}</div>
@@ -1837,7 +1832,7 @@ const Navbar = ({
                 {user.photoURL ? (
                   <img 
                     src={user.photoURL || null} 
-                    alt={user.displayName || ""} 
+                    alt={`${user.displayName || 'User'} profile photo`} 
                     className="w-8 h-8 rounded-full border border-gray-200" 
                     referrerPolicy="no-referrer"
                   />
@@ -1912,7 +1907,7 @@ const Navbar = ({
                               <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-50 shrink-0 border border-gray-100">
                                 <img 
                                   src={item.image} 
-                                  alt={item.title} 
+                                  alt={`${item.title} cart thumbnail`} 
                                   className="w-full h-full object-cover"
                                   referrerPolicy="no-referrer"
                                 />
@@ -2801,7 +2796,8 @@ const AdminPanel = ({
   });
   const [importPreview, setImportPreview] = useState<Product | null>(null);
   const [bulkResults, setBulkResults] = useState<{url: string, status: 'success' | 'error', message?: string}[]>([]);
-  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'tracking' | 'messages'>('overview');
+  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'fulfillment' | 'tracking' | 'messages'>('overview');
+  const [approvalSubTab, setApprovalSubTab] = useState<'pending' | 'approved'>('pending');
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
 
@@ -2902,14 +2898,23 @@ const AdminPanel = ({
       await updateOrder(orderId, { 
         automationStatus: 'completed', 
         status: 'fulfilled',
-        automationLog: logs
+        automationLog: logs,
+        fulfillmentDetails: {
+          supplierOrderId: sourceOrderId,
+          trackingNumber: `TRK-${Math.random().toString(36).substr(2, 12).toUpperCase()}`,
+          supplierName: 'Alibaba / AliExpress',
+          lastAutomationStep: 'Order Placed Successfully'
+        }
       });
 
     } catch (error) {
       console.error('Fulfillment error:', error);
       await updateOrder(orderId, { 
         automationStatus: 'failed', 
-        automationLog: [...(order.automationLog || []), `Critical Error: ${error instanceof Error ? error.message : String(error)}`]
+        automationLog: [...(order.automationLog || []), `Critical Error: ${error instanceof Error ? error.message : String(error)}`],
+        fulfillmentDetails: {
+          error: error instanceof Error ? error.message : 'Unknown automation error'
+        }
       });
     }
   };
@@ -3112,6 +3117,12 @@ const AdminPanel = ({
             className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", tab === 'orders' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
           >
             Orders
+          </button>
+          <button 
+            onClick={() => setTab('fulfillment')}
+            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", tab === 'fulfillment' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            Fulfillment
           </button>
           <button 
             onClick={() => setTab('tracking')}
@@ -3762,166 +3773,229 @@ const AdminPanel = ({
           exit={{ opacity: 0, y: -20 }}
           className="space-y-6"
         >
-          <h2 className="text-xl font-bold">Pending Approval ({pendingCount})</h2>
-          {products.filter(p => p.status === 'pending').length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-2xl text-gray-400">
-              No products waiting for approval.
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Product Approval Center</h2>
+            <div className="flex bg-gray-100 p-1 rounded-xl">
+              <button 
+                onClick={() => setApprovalSubTab('pending')}
+                className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", approvalSubTab === 'pending' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+              >
+                Pending ({pendingCount})
+              </button>
+              <button 
+                onClick={() => setApprovalSubTab('approved')}
+                className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", approvalSubTab === 'approved' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+              >
+                Approved ({products.filter(p => p.status === 'approved').length})
+              </button>
             </div>
-          ) : (
-            products.filter(p => p.status === 'pending').map(p => {
-              const availableImages = Array.from(new Set([
-                p.image,
-                ...(p.gallery || []),
-                ...(p.variations?.flatMap(v => v.options.map(o => o.image).filter((img): img is string => !!img)) || [])
-              ]));
+          </div>
 
-              return (
-                <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6">
-                  <div className="w-full md:w-48 space-y-4">
-                    <div className="relative group">
-                      <img src={p.image || null} className="w-full h-48 object-cover rounded-xl shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
-                        <span className="text-white text-[10px] font-bold uppercase tracking-widest">Primary Image</span>
-                      </div>
-                    </div>
-                    
-                    {availableImages.length > 1 && (
-                      <div className="space-y-2">
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Select Primary Image</p>
-                        <div className="grid grid-cols-4 gap-2">
-                          {availableImages.map((img, i) => (
-                            <button
-                              key={i}
-                              onClick={() => updateProduct({ ...p, image: img })}
-                              className={cn(
-                                "aspect-square rounded-lg overflow-hidden border-2 transition-all",
-                                p.image === img ? "border-indigo-600 shadow-sm scale-105" : "border-transparent opacity-50 hover:opacity-100"
-                              )}
-                            >
-                              <img src={img || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            </button>
-                          ))}
+          {approvalSubTab === 'pending' ? (
+            products.filter(p => p.status === 'pending').length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-2xl text-gray-400">
+                No products waiting for approval.
+              </div>
+            ) : (
+              products.filter(p => p.status === 'pending').map(p => {
+                const availableImages = Array.from(new Set([
+                  p.image,
+                  ...(p.gallery || []),
+                  ...(p.variations?.flatMap(v => v.options.map(o => o.image).filter((img): img is string => !!img)) || [])
+                ]));
+
+                return (
+                  <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6">
+                    <div className="w-full md:w-48 space-y-4">
+                      <div className="relative group">
+                        <img src={p.image || null} className="w-full h-48 object-cover rounded-xl shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
+                          <span className="text-white text-[10px] font-bold uppercase tracking-widest">Primary Image</span>
                         </div>
                       </div>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                  <div className="flex justify-between items-start mb-4">
-                    <input 
-                      type="text" 
-                      value={p.title} 
-                      onChange={(e) => updateProduct({ ...p, title: e.target.value })}
-                      className="text-lg font-bold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-200 focus:border-indigo-500 outline-none w-full mr-4"
-                    />
-                    <div className="flex gap-2 shrink-0">
-                      {(p as any).isVerified && (
-                        <span className="bg-green-100 text-green-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3" />
-                          Verified
-                        </span>
+                      
+                      {availableImages.length > 1 && (
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Select Primary Image</p>
+                          <div className="grid grid-cols-4 gap-2">
+                            {availableImages.map((img, i) => (
+                              <button
+                                key={i}
+                                onClick={() => updateProduct({ ...p, image: img })}
+                                className={cn(
+                                  "aspect-square rounded-lg overflow-hidden border-2 transition-all",
+                                  p.image === img ? "border-indigo-600 shadow-sm scale-105" : "border-transparent opacity-50 hover:opacity-100"
+                                )}
+                              >
+                                <img src={img || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                      <span className="bg-orange-100 text-orange-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Pending</span>
                     </div>
-                  </div>
-                  <textarea 
-                    value={p.description} 
-                    onChange={(e) => updateProduct({ ...p, description: e.target.value })}
-                    className="text-sm text-gray-500 mb-4 w-full bg-transparent border-b border-transparent hover:border-gray-200 focus:border-indigo-500 outline-none resize-none h-20"
-                  />
-                  
-                  {p.features && p.features.length > 0 && (
-                    <div className="mb-6 space-y-2">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Extracted Features</p>
-                      <div className="flex flex-wrap gap-2">
-                        {p.features.map((feature, i) => (
-                          <span key={i} className="bg-gray-50 text-gray-600 text-[10px] px-2 py-1 rounded-lg border border-gray-100">{feature}</span>
-                        ))}
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start mb-4">
+                        <input 
+                          type="text" 
+                          value={p.title} 
+                          onChange={(e) => updateProduct({ ...p, title: e.target.value })}
+                          className="text-lg font-bold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-200 focus:border-indigo-500 outline-none w-full mr-4"
+                        />
+                        <div className="flex gap-2 shrink-0">
+                          {(p as any).isVerified && (
+                            <span className="bg-green-100 text-green-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3" />
+                              Verified
+                            </span>
+                          )}
+                          <span className="bg-orange-100 text-orange-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Pending</span>
+                        </div>
+                      </div>
+                      <textarea 
+                        value={p.description} 
+                        onChange={(e) => updateProduct({ ...p, description: e.target.value })}
+                        className="text-sm text-gray-500 mb-4 w-full bg-transparent border-b border-transparent hover:border-gray-200 focus:border-indigo-500 outline-none resize-none h-20"
+                      />
+                      
+                      {p.features && p.features.length > 0 && (
+                        <div className="mb-6 space-y-2">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Extracted Features</p>
+                          <div className="flex flex-wrap gap-2">
+                            {p.features.map((feature, i) => (
+                              <span key={i} className="bg-gray-50 text-gray-600 text-[10px] px-2 py-1 rounded-lg border border-gray-100">{feature}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-6 mb-4">
+                        <div>
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Source Cost</span>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="number" 
+                              value={p.price} 
+                              onChange={(e) => updateProduct({ ...p, price: Number(e.target.value) })}
+                              className="w-32 px-3 py-2 border border-gray-200 rounded-xl text-lg font-bold"
+                            />
+                            <select 
+                              value={p.sourceCurrency} 
+                              onChange={(e) => updateProduct({ ...p, sourceCurrency: e.target.value })}
+                              className="px-2 py-2 border border-gray-200 rounded-xl text-sm font-bold"
+                            >
+                              {Object.keys(rates).map(c => <option key={c} value={c}>{c}</option>)}
+                              {!rates['TZS'] && <option value="TZS">TZS</option>}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Markup (%)</span>
+                          <input 
+                            type="number" 
+                            value={p.markup} 
+                            onChange={(e) => updateProduct({ ...p, markup: Number(e.target.value) })}
+                            className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-lg font-bold text-indigo-600"
+                          />
+                        </div>
+                        <div>
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Retail Price</span>
+                          <span className="text-2xl font-bold text-green-600">
+                            {formatPrice(p.price * (1 + p.markup / 100), currency, rates, p.sourceCurrency)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => updateStatus(p.id, 'approved')}
+                          className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Approve & List
+                        </button>
+                        <button 
+                          onClick={() => removeProduct(p.id)}
+                          className="px-6 border border-gray-200 text-gray-600 py-3 rounded-xl font-bold hover:bg-red-50 transition-all hover:text-red-600"
+                        >
+                          Reject
+                        </button>
                       </div>
                     </div>
-                  )}
+                  </div>
+                );
+              })
+            )
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {products.filter(p => p.status === 'approved').length === 0 ? (
+                <div className="col-span-full text-center py-12 bg-gray-50 rounded-2xl text-gray-400">
+                  No approved products yet.
+                </div>
+              ) : (
+                products.filter(p => p.status === 'approved').map(p => {
+                  const availableImages = Array.from(new Set([
+                    p.image,
+                    ...(p.gallery || []),
+                    ...(p.variations?.flatMap(v => v.options.map(o => o.image).filter((img): img is string => !!img)) || [])
+                  ]));
 
-                  {p.variations && p.variations.length > 0 && (
-                    <div className="mb-6 space-y-2">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Scraped Variations</p>
-                      <div className="space-y-3">
-                        {p.variations.map((v, i) => (
-                          <div key={i} className="flex items-start gap-2">
-                            <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded uppercase mt-0.5">{v.name}:</span>
-                            <div className="flex flex-wrap gap-1">
-                              {v.options.map((opt, j) => (
-                                <span key={j} className="text-[9px] text-gray-600 bg-white border border-gray-100 px-1.5 py-0.5 rounded">{opt.name}</span>
-                              ))}
+                  return (
+                    <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-4 flex gap-4 shadow-sm">
+                      <div className="w-24 h-24 shrink-0 relative group">
+                        <img src={p.image || null} className="w-full h-full object-cover rounded-lg border border-gray-100" referrerPolicy="no-referrer" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
+                          <div className="grid grid-cols-2 gap-1 p-1">
+                            {availableImages.slice(0, 4).map((img, i) => (
+                              <button key={i} onClick={() => updateProduct({ ...p, image: img })} className="w-4 h-4 rounded-sm overflow-hidden border border-white/50">
+                                <img src={img || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-bold text-gray-900 truncate mb-2">{p.title}</h4>
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <span className="block text-[8px] font-bold text-gray-400 uppercase mb-0.5">Markup %</span>
+                            <input 
+                              type="number" 
+                              value={p.markup} 
+                              onChange={(e) => updateProduct({ ...p, markup: Number(e.target.value) })}
+                              className="w-full px-2 py-1 border border-gray-200 rounded-lg text-xs font-bold text-indigo-600"
+                            />
+                          </div>
+                          <div>
+                            <span className="block text-[8px] font-bold text-gray-400 uppercase mb-0.5">Retail Price</span>
+                            <div className="text-xs font-bold text-green-600 truncate">
+                              {formatPrice(p.price * (1 + p.markup / 100), currency, rates, p.sourceCurrency)}
                             </div>
                           </div>
-                        ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => updateStatus(p.id, 'pending')}
+                            className="flex-1 text-[10px] font-bold text-orange-600 bg-orange-50 py-1.5 rounded-lg hover:bg-orange-100 transition-colors"
+                          >
+                            Move to Pending
+                          </button>
+                          <button 
+                            onClick={() => removeProduct(p.id)}
+                            className="px-3 text-[10px] font-bold text-red-600 bg-red-50 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  )}
-
-                  <div className="flex items-center gap-6 mb-4">
-                    <div>
-                      <span className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Source Cost</span>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="number" 
-                          value={p.price} 
-                          onChange={(e) => updateProduct({ ...p, price: Number(e.target.value) })}
-                          className="w-32 px-3 py-2 border border-gray-200 rounded-xl text-lg font-bold"
-                        />
-                        <select 
-                          value={p.sourceCurrency} 
-                          onChange={(e) => updateProduct({ ...p, sourceCurrency: e.target.value })}
-                          className="px-2 py-2 border border-gray-200 rounded-xl text-sm font-bold"
-                        >
-                          {Object.keys(rates).map(c => <option key={c} value={c}>{c}</option>)}
-                          {!rates['TZS'] && <option value="TZS">TZS</option>}
-                        </select>
-                      </div>
-                      {(p as any).priceFullText && (
-                        <p className="text-[9px] text-gray-400 mt-1 italic">Scraped: "{(p as any).priceFullText}"</p>
-                      )}
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Markup (%)</span>
-                      <input 
-                        type="number" 
-                        value={p.markup} 
-                        onChange={(e) => updateProduct({ ...p, markup: Number(e.target.value) })}
-                        className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-lg font-bold text-indigo-600"
-                      />
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Retail Price</span>
-                      <span className="text-2xl font-bold text-green-600">
-                        {formatPrice(p.price * (1 + p.markup / 100), currency, rates, p.sourceCurrency)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <VerificationLogs logs={p.verificationLogs} />
-
-                  <div className="flex gap-3">
-                    <button 
-                      onClick={() => updateStatus(p.id, 'approved')}
-                      className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      Approve & List
-                    </button>
-                    <button 
-                      onClick={() => removeProduct(p.id)}
-                      className="px-6 border border-gray-200 text-gray-600 py-3 rounded-xl font-bold hover:bg-red-50 transition-all hover:text-red-600"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </motion.div>
-    )}
+                  );
+                })
+              )}
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {tab === 'orders' && (
         <motion.div 
@@ -4178,6 +4252,127 @@ const AdminPanel = ({
                   Status: Operational
                 </div>
               </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {tab === 'fulfillment' && (
+        <motion.div 
+          key="fulfillment"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="space-y-8"
+        >
+          <div className="bg-white rounded-3xl border border-gray-200 p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                  <Settings className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Automation Control Center</h2>
+                  <p className="text-sm text-gray-500">Monitor and manage automated supplier purchases.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg border border-green-100">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-[10px] font-bold text-green-700 uppercase tracking-widest">Automation Engine Online</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Awaiting Fulfillment</div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {orders.filter(o => o.status === 'paid' && (!o.automationStatus || o.automationStatus === 'idle')).length}
+                </div>
+              </div>
+              <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
+                <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Currently Processing</div>
+                <div className="text-2xl font-bold text-indigo-600">
+                  {orders.filter(o => o.automationStatus === 'processing').length}
+                </div>
+              </div>
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100">
+                <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Automation Failures</div>
+                <div className="text-2xl font-bold text-red-600">
+                  {orders.filter(o => o.automationStatus === 'failed').length}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-indigo-600" />
+                Fulfillment Queue
+              </h3>
+              
+              {orders.filter(o => o.status === 'paid' || o.status === 'fulfilled').length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-2xl text-gray-400 italic">
+                  No orders ready for fulfillment.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {orders.filter(o => o.status === 'paid' || o.status === 'fulfilled').map(order => (
+                    <div key={order.id} className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-indigo-200 transition-colors">
+                      <div className="flex flex-col lg:flex-row justify-between gap-6">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-mono text-xs font-bold text-gray-400">#{order.id}</span>
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest",
+                              order.automationStatus === 'completed' ? "bg-green-100 text-green-700" :
+                              order.automationStatus === 'processing' ? "bg-indigo-100 text-indigo-600 animate-pulse" :
+                              order.automationStatus === 'failed' ? "bg-red-100 text-red-700" :
+                              "bg-gray-100 text-gray-600"
+                            )}>
+                              {order.automationStatus || 'Idle'}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-gray-900 mb-1">{order.customer.name}</h4>
+                          <p className="text-xs text-gray-500 mb-4">{order.items.length} items • {formatPrice(order.total, order.currency, rates, 'USD')}</p>
+                          
+                          {order.fulfillmentDetails && (
+                            <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                              <div>
+                                <div className="text-[9px] font-bold text-gray-400 uppercase">Supplier Order ID</div>
+                                <div className="text-xs font-mono font-bold text-gray-700">{order.fulfillmentDetails.supplierOrderId || 'N/A'}</div>
+                              </div>
+                              <div>
+                                <div className="text-[9px] font-bold text-gray-400 uppercase">Tracking Number</div>
+                                <div className="text-xs font-mono font-bold text-indigo-600">{order.fulfillmentDetails.trackingNumber || 'Awaiting...'}</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="w-full lg:w-64 space-y-3">
+                          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Automation Logs</div>
+                          <div className="bg-gray-900 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[10px] text-green-400 space-y-1">
+                            {order.automationLog && order.automationLog.length > 0 ? (
+                              order.automationLog.map((log, i) => <div key={i}>{log}</div>)
+                            ) : (
+                              <div className="text-gray-600 italic">No logs available</div>
+                            )}
+                          </div>
+                          
+                          {order.status === 'paid' && (!order.automationStatus || order.automationStatus === 'idle' || order.automationStatus === 'failed') && (
+                            <button 
+                              onClick={() => handleFulfill(order.id)}
+                              className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100"
+                            >
+                              <Play className="w-4 h-4" />
+                              {order.automationStatus === 'failed' ? 'Retry Automation' : 'Start Auto-Fulfillment'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </motion.div>
