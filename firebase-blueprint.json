@@ -18,9 +18,14 @@
         "status": { "type": "string", "enum": ["pending", "approved"] },
         "variations": { "type": "array", "items": { "$ref": "Variation" } },
         "verificationLogs": { "type": "array", "items": { "type": "string" } },
-        "shippingInfo": { "type": "string" }
+        "shippingInfo": { "type": "string" },
+        "category": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "type": { "type": "string", "enum": ["dropship", "manual"] },
+        "createdAt": { "type": "string" }
       },
-      "required": ["id", "title", "price", "sourceCurrency", "image", "sourceUrl", "markup", "status"]
+      "required": ["id", "title", "price", "sourceCurrency", "image", "markup", "status", "type"]
     },
     "Variation": {
       "title": "Variation",
@@ -119,6 +124,20 @@
       },
       "required": ["id", "senderId", "text", "timestamp"]
     },
+    "Review": {
+      "title": "Review",
+      "description": "A product review from a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "rating", "comment", "createdAt"]
+    },
     "User": {
       "title": "User",
       "description": "A user profile",
@@ -131,12 +150,27 @@
         "createdAt": { "type": "string" }
       },
       "required": ["uid", "email", "role", "createdAt"]
+    },
+    "ExchangeRates": {
+      "title": "ExchangeRates",
+      "description": "Live exchange rates for currency conversion",
+      "type": "object",
+      "properties": {
+        "base": { "type": "string" },
+        "rates": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["base", "rates", "updatedAt"]
     }
   },
   "firestore": {
     "/products/{productId}": {
       "schema": "Product",
       "description": "Collection of dropshipping products"
+    },
+    "/products/{productId}/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Subcollection of reviews for a specific product."
     },
     "/orders/{orderId}": {
       "schema": "Order",
@@ -153,6 +187,10 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection of user profiles"
+    },
+    "/settings/exchangeRates": {
+      "schema": "ExchangeRates",
+      "description": "Global exchange rates settings"
     }
   }
 }

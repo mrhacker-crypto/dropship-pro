@@ -35,14 +35,33 @@ app.post("/api/scrape", async (req, res) => {
   try {
     console.log(`[SCRAPE] Fetching HTML from: ${url}`);
     let html;
+    const isAlibaba = url.includes('alibaba.com');
     try {
+      const headers: any = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand)";v="24", "Google Chrome";v="122"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1'
+      };
+
+      if (isAlibaba) {
+        headers['Referer'] = 'https://www.alibaba.com/';
+        headers['Cookie'] = 'ali_apache_id=1.1.1.1; '; // Minimal cookie to avoid some blocks
+      }
+
       const axiosRes = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
-        timeout: 15000,
+        headers,
+        timeout: 20000,
+        maxRedirects: 5
       });
       html = axiosRes.data;
     } catch (axiosError: any) {
@@ -60,6 +79,18 @@ app.post("/api/scrape", async (req, res) => {
       // Extract structured data (JSON-LD)
       const jsonLd = $("script[type='application/ld+json']").map((_, el) => $(el).html()).get().join('\n');
       
+      // Extract Alibaba-specific detail data if it exists
+      let alibabaDetailData = "";
+      if (isAlibaba) {
+        $("script").each((_, el) => {
+          const content = $(el).html() || "";
+          if (content.includes('window.detailData') || content.includes('window.__INITIAL_STATE__')) {
+            // Extract a chunk of the script that likely contains the JSON
+            alibabaDetailData += content.substring(0, 10000) + "\n";
+          }
+        });
+      }
+
       // Extract all images for the AI to choose from
       const allImages = $("img").map((_, el) => $(el).attr("src")).get().filter(Boolean);
       
@@ -67,6 +98,13 @@ app.post("/api/scrape", async (req, res) => {
       $("script, style, svg, iframe, noscript, footer, nav, header").remove();
       
       const bodyText = $("body").text().replace(/\s+/g, ' ').trim();
+      
+      // Check for Alibaba "Slide to verify" or "Robot" page
+      if (isAlibaba && (bodyText.includes("Slide to verify") || bodyText.includes("Robot Check") || bodyText.includes("Security Check"))) {
+        console.warn(`[SCRAPE] Alibaba blocked the request with a security check.`);
+        return res.status(403).json({ error: "Alibaba is currently blocking automated requests. Please try again in a few minutes or use a different product link." });
+      }
+
       const metaTags = $("meta").map((_, el) => {
         const name = $(el).attr("name") || $(el).attr("property");
         const content = $(el).attr("content");
@@ -89,6 +127,10 @@ app.post("/api/scrape", async (req, res) => {
         - Look for "Min. Order" or "MOQ" and include it in the features.
         - Look for the unit (e.g. "Piece", "Set", "Bag") and include it in the title or features.
         - Capture all variation images (often found in the "Options" or "Variations" section).
+        - If you see "Lead Time" or "Processing Time", include it in the features.
+        
+        ALIBABA DETAIL DATA (RAW SCRIPT CHUNK):
+        ${alibabaDetailData}
         
         META TAGS:
         ${metaTags}

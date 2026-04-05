@@ -67,15 +67,16 @@ service cloud.firestore {
     }
 
     function isValidProduct(data) {
-      return data.keys().hasOnly(['id', 'title', 'description', 'features', 'price', 'sourceCurrency', 'image', 'gallery', 'sourceUrl', 'markup', 'status', 'variations', 'verificationLogs', 'shippingInfo', 'isVerified']) &&
-             data.keys().hasAll(['id', 'title', 'price', 'sourceCurrency', 'image', 'sourceUrl', 'markup', 'status']) &&
+      return data.keys().hasOnly(['id', 'title', 'description', 'features', 'price', 'sourceCurrency', 'image', 'gallery', 'sourceUrl', 'markup', 'status', 'variations', 'verificationLogs', 'shippingInfo', 'isVerified', 'category', 'sellerId', 'sellerName', 'type', 'createdAt']) &&
+             data.keys().hasAll(['id', 'title', 'price', 'sourceCurrency', 'image', 'markup', 'status', 'type']) &&
              data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
              data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
              data.price is number && data.price >= 0 &&
              data.markup is number && data.markup >= 0 &&
              data.status in ['pending', 'approved'] &&
-             data.sourceUrl is string && data.sourceUrl.size() < 2000 &&
-             data.image is string && data.image.size() < 2000;
+             data.type in ['dropship', 'manual'] &&
+             (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() < 2000)) &&
+             data.image is string && data.image.size() < 1000000; // Allow larger for base64 if needed, but 1MB is limit
     }
 
     function isValidOrder(data) {
@@ -114,11 +115,29 @@ service cloud.firestore {
              data.text is string && data.text.size() > 0 && data.text.size() < 10000;
     }
 
+    function isValidReview(data) {
+      return data.keys().hasAll(['id', 'userId', 'userName', 'rating', 'comment', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.userName is string && data.userName.size() > 0 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() > 0 && data.comment.size() < 5000 &&
+             data.createdAt is string;
+    }
+
     match /products/{productId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidProduct(request.resource.data);
-      allow update: if isAdmin() && isValidProduct(request.resource.data);
-      allow delete: if isAdmin();
+      allow create: if isAdmin() && isValidProduct(request.resource.data) && 
+                    (request.resource.data.type == 'dropship' || request.resource.data.sellerId == request.auth.uid);
+      allow update: if isAdmin() && isValidProduct(request.resource.data) &&
+                    (request.resource.data.type == 'dropship' || resource.data.sellerId == request.auth.uid);
+      allow delete: if isAdmin() && (resource.data.type == 'dropship' || resource.data.sellerId == request.auth.uid);
+
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidReview(request.resource.data);
+        allow update, delete: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.userId);
+      }
     }
 
     match /orders/{orderId} {
@@ -150,6 +169,11 @@ service cloud.firestore {
 
     match /test/connection {
       allow read: if true;
+    }
+
+    match /settings/exchangeRates {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }

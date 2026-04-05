@@ -1,5 +1,5 @@
 {
-  "name": "MAC8 Marketplace",
+  "name": "Dropship Pro Alpha",
   "description": "Premium e-commerce marketplace in Dar es Salaam with WhatsApp ordering, seller signup, and advanced product filtering.",
   "requestFramePermissions": ["geolocation"]
 }

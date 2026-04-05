@@ -1,16 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
-import React, { useState, useEffect, Component, useCallback } from 'react';
+import React, { useState, useEffect, Component, useCallback, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, CartItem, CustomerInfo, Order, ExchangeRates, Chat, ChatMessage } from './types';
+import { Product, CartItem, CustomerInfo, Order, ExchangeRates, Chat, ChatMessage, Review } from './types';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer, addDoc, serverTimestamp, where, limit, getDocs, getDoc } from 'firebase/firestore';
 import { signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
 import * as Slider from '@radix-ui/react-slider';
+import Fuse from 'fuse.js';
 
 enum OperationType {
   CREATE = 'create',
@@ -247,6 +248,154 @@ const VerificationLogs = ({ logs }: { logs?: string[] }) => {
   );
 };
 
+const ProductReviews = ({ productId, user }: { productId: string; user: User | null }) => {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const reviewsRef = collection(db, 'products', productId, 'reviews');
+    const q = query(reviewsRef, orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setReviews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `products/${productId}/reviews`);
+    });
+    return unsubscribe;
+  }, [productId]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!comment.trim()) return;
+
+    setSubmitting(true);
+    const reviewId = Math.random().toString(36).substr(2, 9);
+    const newReview: Review = {
+      id: reviewId,
+      userId: user.uid,
+      userName: user.displayName || user.email.split('@')[0],
+      rating,
+      comment,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'products', productId, 'reviews', reviewId), newReview);
+      setComment('');
+      setRating(5);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `products/${productId}/reviews/${reviewId}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+          <Star className="w-3 h-3" />
+          Customer Reviews ({reviews.length})
+        </h4>
+        {reviews.length > 0 && (
+          <div className="flex items-center gap-1">
+            <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+            <span className="text-sm font-bold text-gray-900">
+              {(reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {user ? (
+        <form onSubmit={handleSubmit} className="bg-gray-50 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setRating(s)}
+                className="focus:outline-none"
+              >
+                <Star 
+                  className={cn(
+                    "w-6 h-6 transition-colors",
+                    s <= rating ? "text-yellow-400 fill-yellow-400" : "text-gray-300"
+                  )} 
+                />
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Share your thoughts about this product..."
+            className="w-full bg-white border border-gray-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none min-h-[100px] transition-all"
+            required
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {submitting ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                Submit Review
+              </>
+            )}
+          </button>
+        </form>
+      ) : (
+        <div className="bg-indigo-50 rounded-2xl p-6 text-center">
+          <p className="text-sm text-indigo-900 font-medium mb-2">Want to leave a review?</p>
+          <p className="text-xs text-indigo-600">Please sign in to share your experience.</p>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {reviews.map((review) => (
+          <div key={review.id} className="border-b border-gray-100 pb-6 last:border-0">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-xs font-bold">
+                  {review.userName[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{review.userName}</p>
+                  <p className="text-[10px] text-gray-400">{new Date(review.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star 
+                    key={s} 
+                    className={cn(
+                      "w-3 h-3",
+                      s <= review.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-200"
+                    )} 
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">{review.comment}</p>
+          </div>
+        ))}
+        {reviews.length === 0 && (
+          <div className="text-center py-8">
+            <MessageSquare className="w-8 h-8 text-gray-200 mx-auto mb-3" />
+            <p className="text-sm text-gray-400">No reviews yet. Be the first to review!</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ProductModal = ({ 
   product, 
   onClose, 
@@ -254,7 +403,8 @@ const ProductModal = ({
   onConfirm,
   currency, 
   rates,
-  isAdmin
+  isAdmin,
+  user
 }: { 
   product: Product; 
   onClose: () => void; 
@@ -263,6 +413,7 @@ const ProductModal = ({
   currency: string;
   rates: ExchangeRates;
   isAdmin?: boolean;
+  user: User | null;
 }) => {
   const [selectedVariations, setSelectedVariations] = useState<{ [key: string]: string }>({});
   const [quantity, setQuantity] = useState(1);
@@ -288,25 +439,26 @@ const ProductModal = ({
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col md:flex-row"
+        className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col md:flex-row relative"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="md:w-1/2 h-64 md:h-auto relative bg-gray-50">
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 z-20 p-2 bg-white/80 backdrop-blur rounded-full text-gray-900 hover:bg-white transition-colors shadow-sm md:hidden"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="md:w-1/2 h-64 md:h-auto relative bg-gray-50 shrink-0">
           <img 
             src={currentImage || null} 
             alt={product.title} 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
-          <button 
-            onClick={onClose}
-            className="absolute top-4 left-4 p-2 bg-white/80 backdrop-blur rounded-full text-gray-900 hover:bg-white transition-colors shadow-sm md:hidden"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
         
-        <div className="md:w-1/2 p-8 md:p-12 overflow-y-auto flex flex-col">
+        <div className="md:w-1/2 p-6 sm:p-8 md:p-12 overflow-y-auto flex flex-col">
           <div className="flex justify-between items-start mb-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -324,17 +476,17 @@ const ProductModal = ({
                     type="text"
                     value={editedTitle}
                     onChange={(e) => setEditedTitle(e.target.value)}
-                    className="w-full text-2xl font-bold text-gray-900 mb-2 leading-tight border-b border-dashed border-gray-300 focus:border-indigo-500 outline-none bg-transparent"
+                    className="w-full text-xl sm:text-2xl font-bold text-gray-900 mb-2 leading-tight border-b border-dashed border-gray-300 focus:border-indigo-500 outline-none bg-transparent"
                     placeholder="Product Title"
                   />
-                  <div className="text-2xl font-extrabold text-indigo-600">
+                  <div className="text-xl sm:text-2xl font-extrabold text-indigo-600">
                     {formatPrice(product.price * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
                   </div>
                 </div>
               ) : (
                 <>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2 leading-tight">{product.title}</h2>
-                  <div className="text-2xl font-extrabold text-indigo-600">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2 leading-tight">{product.title}</h2>
+                  <div className="text-xl sm:text-2xl font-extrabold text-indigo-600">
                     {formatPrice(product.price * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
                   </div>
                 </>
@@ -348,7 +500,7 @@ const ProductModal = ({
             </button>
           </div>
 
-          <div className="space-y-8 flex-1">
+          <div className="space-y-6 sm:space-y-8 flex-1">
             <section>
               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                 <Info className="w-3 h-3" />
@@ -358,11 +510,11 @@ const ProductModal = ({
                 <textarea
                   value={editedDescription}
                   onChange={(e) => setEditedDescription(e.target.value)}
-                  className="w-full text-gray-600 leading-relaxed border border-gray-200 rounded-xl p-4 focus:ring-2 focus:ring-indigo-500 outline-none min-h-[150px]"
+                  className="w-full text-sm sm:text-base text-gray-600 leading-relaxed border border-gray-200 rounded-xl p-4 focus:ring-2 focus:ring-indigo-500 outline-none min-h-[120px]"
                   placeholder="Product Description"
                 />
               ) : (
-                <p className="text-gray-600 leading-relaxed">{product.description}</p>
+                <p className="text-sm sm:text-base text-gray-600 leading-relaxed">{product.description}</p>
               )}
             </section>
 
@@ -475,6 +627,10 @@ const ProductModal = ({
                 <p className="text-xs text-indigo-900 font-medium leading-relaxed">{product.shippingInfo}</p>
               </section>
             )}
+
+            <section className="pt-8 border-t border-gray-100">
+              <ProductReviews productId={product.id} user={user} />
+            </section>
 
             <section className="pt-8 border-t border-gray-100">
               <div className="flex items-center justify-between mb-6">
@@ -991,22 +1147,624 @@ const AuthModal = ({
   );
 };
 
+const ProductForm = ({ 
+  onClose, 
+  onSave, 
+  initialProduct,
+  user
+}: { 
+  onClose: () => void; 
+  onSave: (p: Partial<Product>) => Promise<void>;
+  initialProduct?: Product;
+  user: User | null;
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<Partial<Product>>(initialProduct || {
+    title: '',
+    description: '',
+    price: 0,
+    sourceCurrency: 'USD',
+    image: '',
+    gallery: [],
+    category: 'General',
+    status: 'pending',
+    type: 'manual',
+    markup: 0,
+    features: [],
+    variations: []
+  });
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 500000) { // 500KB limit for base64 to be safe
+        alert("Image is too large. Please select an image smaller than 500KB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, image: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      Array.from(files).forEach((file: File) => {
+        if (file.size > 500000) {
+          alert(`Image ${file.name} is too large. Please select images smaller than 500KB.`);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFormData(prev => ({
+            ...prev,
+            gallery: [...(prev.gallery || []), reader.result as string]
+          }));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const removeGalleryImage = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      gallery: (prev.gallery || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  const addVariation = () => {
+    setFormData(prev => ({
+      ...prev,
+      variations: [...(prev.variations || []), { name: '', options: [] }]
+    }));
+  };
+
+  const removeVariation = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      variations: (prev.variations || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateVariationName = (index: number, name: string) => {
+    setFormData(prev => {
+      const newVariations = [...(prev.variations || [])];
+      newVariations[index] = { ...newVariations[index], name };
+      return { ...prev, variations: newVariations };
+    });
+  };
+
+  const addOption = (vIndex: number) => {
+    setFormData(prev => {
+      const newVariations = [...(prev.variations || [])];
+      newVariations[vIndex] = {
+        ...newVariations[vIndex],
+        options: [...newVariations[vIndex].options, { name: '' }]
+      };
+      return { ...prev, variations: newVariations };
+    });
+  };
+
+  const removeOption = (vIndex: number, oIndex: number) => {
+    setFormData(prev => {
+      const newVariations = [...(prev.variations || [])];
+      newVariations[vIndex] = {
+        ...newVariations[vIndex],
+        options: newVariations[vIndex].options.filter((_, i) => i !== oIndex)
+      };
+      return { ...prev, variations: newVariations };
+    });
+  };
+
+  const updateOptionName = (vIndex: number, oIndex: number, name: string) => {
+    setFormData(prev => {
+      const newVariations = [...(prev.variations || [])];
+      newVariations[vIndex].options[oIndex] = { ...newVariations[vIndex].options[oIndex], name };
+      return { ...prev, variations: newVariations };
+    });
+  };
+
+  const handleOptionImageUpload = (vIndex: number, oIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 500000) {
+        alert("Image is too large. Please select an image smaller than 500KB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => {
+          const newVariations = [...(prev.variations || [])];
+          newVariations[vIndex].options[oIndex] = { 
+            ...newVariations[vIndex].options[oIndex], 
+            image: reader.result as string 
+          };
+          return { ...prev, variations: newVariations };
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.title || !formData.price || !formData.image) {
+      alert("Please fill in all required fields (Title, Price, Image)");
+      return;
+    }
+    setLoading(true);
+    try {
+      const dataToSave: Partial<Product> = {
+        ...formData,
+        sellerId: user?.uid,
+        sellerName: user?.displayName || user?.email || 'Unknown Seller',
+      };
+      
+      if (!initialProduct) {
+        dataToSave.createdAt = new Date().toISOString();
+      }
+
+      await onSave(dataToSave);
+      onClose();
+    } catch (error) {
+      console.error("Save failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+        className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-gray-900">{initialProduct ? 'Edit Product' : 'List New Product'}</h2>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Product Title *</label>
+              <input
+                type="text"
+                required
+                value={formData.title}
+                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                placeholder="e.g. Vintage Leather Backpack"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Price *</label>
+                <div className="relative">
+                  <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="number"
+                    required
+                    step="0.01"
+                    value={formData.price}
+                    onChange={(e) => setFormData(prev => ({ ...prev, price: parseFloat(e.target.value) }))}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                >
+                  <option value="Electronics">Electronics</option>
+                  <option value="Fashion">Fashion</option>
+                  <option value="Home">Home</option>
+                  <option value="Beauty">Beauty</option>
+                  <option value="Sports">Sports</option>
+                  <option value="General">General</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[100px]"
+                placeholder="Tell buyers about your product..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Product Image *</label>
+              <div className="flex items-center gap-4">
+                <div className="w-24 h-24 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden relative group">
+                  {formData.image ? (
+                    <>
+                      <img src={formData.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Plus className="w-6 h-6 text-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <Plus className="w-6 h-6 text-gray-300" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </div>
+                <div className="flex-1 text-xs text-gray-400">
+                  <p className="font-bold text-gray-500 mb-1">Upload a high-quality photo</p>
+                  <p>Max size: 500KB. This image will be the first thing buyers see.</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Product Gallery</label>
+              <div className="grid grid-cols-4 gap-4">
+                {(formData.gallery || []).map((img, index) => (
+                  <div key={index} className="aspect-square rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden relative group">
+                    <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <button
+                      type="button"
+                      onClick={() => removeGalleryImage(index)}
+                      className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <div className="aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden relative group hover:border-indigo-300 transition-colors">
+                  <Plus className="w-6 h-6 text-gray-300 group-hover:text-indigo-400 transition-colors" />
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={handleGalleryUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">Add more photos to showcase different angles or variations. Max 500KB per image.</p>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Product Variations</label>
+                <button
+                  type="button"
+                  onClick={addVariation}
+                  className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add Variation
+                </button>
+              </div>
+              
+              <div className="space-y-6">
+                {(formData.variations || []).map((variation, vIndex) => (
+                  <div key={vIndex} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 relative">
+                    <button
+                      type="button"
+                      onClick={() => removeVariation(vIndex)}
+                      className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    
+                    <div className="mb-4">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Variation Name</label>
+                      <input
+                        type="text"
+                        value={variation.name}
+                        onChange={(e) => updateVariationName(vIndex, e.target.value)}
+                        placeholder="e.g. Color, Size, Material"
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Options</label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {variation.options.map((option, oIndex) => (
+                          <div key={oIndex} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-gray-100">
+                            <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden relative group shrink-0">
+                              {option.image ? (
+                                <img src={option.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <Plus className="w-4 h-4 text-gray-300" />
+                              )}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleOptionImageUpload(vIndex, oIndex, e)}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              value={option.name}
+                              onChange={(e) => updateOptionName(vIndex, oIndex, e.target.value)}
+                              placeholder="Option name (e.g. Red, Large)"
+                              className="flex-1 bg-transparent border-none outline-none text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeOption(vIndex, oIndex)}
+                              className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => addOption(vIndex)}
+                          className="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-[10px] font-bold text-gray-400 hover:border-indigo-300 hover:text-indigo-500 transition-all flex items-center justify-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add Option
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(formData.variations || []).length === 0 && (
+                  <div className="text-center py-8 border-2 border-dashed border-gray-100 rounded-2xl">
+                    <p className="text-xs text-gray-400">No variations added yet. Add things like Color or Size.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100 flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              {initialProduct ? 'Update Listing' : 'Publish Product'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const SellerDashboard = ({ 
+  user, 
+  products, 
+  orders,
+  currency,
+  rates
+}: { 
+  user: User | null; 
+  products: Product[]; 
+  orders: Order[];
+  currency: string;
+  rates: ExchangeRates;
+}) => {
+  const [showForm, setShowForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | undefined>();
+
+  const sellerProducts = products.filter(p => p.sellerId === user?.uid);
+  const sellerOrders = orders.filter(o => o.items.some(item => item.sellerId === user?.uid));
+
+  const totalSales = sellerOrders.reduce((sum, o) => sum + o.total, 0);
+  const pendingOrders = sellerOrders.filter(o => o.status === 'pending').length;
+
+  const handleSaveProduct = async (p: Partial<Product>) => {
+    try {
+      if (editingProduct) {
+        await updateDoc(doc(db, 'products', editingProduct.id), p);
+      } else {
+        const id = Math.random().toString(36).substring(2, 15);
+        await setDoc(doc(db, 'products', id), { ...p, id });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'products');
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (confirm("Are you sure you want to delete this listing?")) {
+      try {
+        await deleteDoc(doc(db, 'products', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'products');
+      }
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-2">Seller Dashboard</h1>
+          <p className="text-gray-500">Manage your products, track sales, and grow your business.</p>
+        </div>
+        <button 
+          onClick={() => {
+            setEditingProduct(undefined);
+            setShowForm(true);
+          }}
+          className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center gap-2"
+        >
+          <Plus className="w-5 h-5" />
+          List New Product
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-4">
+            <DollarSign className="w-6 h-6" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">{formatPrice(totalSales, currency, rates)}</div>
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Revenue</div>
+        </div>
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 mb-4">
+            <Clock className="w-6 h-6" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">{pendingOrders}</div>
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Pending Orders</div>
+        </div>
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600 mb-4">
+            <Package className="w-6 h-6" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">{sellerProducts.length}</div>
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Active Listings</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+          <h2 className="text-lg font-bold text-gray-900">Your Listings</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Product</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Price</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sellerProducts.map(product => (
+                <tr key={product.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <img src={product.image} className="w-12 h-12 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                      <div>
+                        <div className="text-sm font-bold text-gray-900">{product.title}</div>
+                        <div className="text-[10px] text-gray-400">{product.category}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-bold text-indigo-600">
+                      {formatPrice(product.price, currency, rates, product.sourceCurrency)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={cn(
+                      "text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider",
+                      product.status === 'approved' ? "bg-green-50 text-green-600" : "bg-orange-50 text-orange-600"
+                    )}>
+                      {product.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => {
+                          setEditingProduct(product);
+                          setShowForm(true);
+                        }}
+                        className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteProduct(product.id)}
+                        className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {sellerProducts.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-gray-400 italic">
+                    No listings yet. Start selling today!
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showForm && (
+          <ProductForm 
+            user={user}
+            onClose={() => setShowForm(false)}
+            onSave={handleSaveProduct}
+            initialProduct={editingProduct}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const Navbar = ({ 
-  cartCount, 
+  cart, 
   isAdmin, 
+  isSeller,
   currency, 
   setCurrency, 
   rates,
   user
 }: { 
-  cartCount: number; 
+  cart: CartItem[]; 
   isAdmin: boolean;
+  isSeller: boolean;
   currency: string;
   setCurrency: (c: string) => void;
   rates: ExchangeRates;
   user: User | null;
 }) => {
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isCartHovered, setIsCartHovered] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
+  const cartTotal = cart.reduce((s, i) => {
+    const finalPrice = (i.price * (1 + i.markup / 100)) / (rates[i.sourceCurrency] || 1);
+    return s + (finalPrice * i.quantity);
+  }, 0);
 
   const handleLogout = async () => {
     try {
@@ -1016,15 +1774,29 @@ const Navbar = ({
     }
   };
 
+  const becomeSeller = async () => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { role: 'seller' });
+      alert("Congratulations! You are now a seller. You can access your Seller Dashboard from the menu.");
+    } catch (error) {
+      console.error("Failed to become seller:", error);
+    }
+  };
+
   return (
     <nav className="border-b border-gray-200 bg-white sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           <Link to="/" className="flex items-center gap-2">
             <Package className="w-8 h-8 text-indigo-600" />
-            <span className="text-xl font-bold tracking-tight text-gray-900">MAC8 Marketplace</span>
+            <span className="text-lg sm:text-xl font-bold tracking-tight text-gray-900 truncate max-w-[150px] sm:max-w-none">Dropship Pro Alpha</span>
           </Link>
-          <div className="flex items-center gap-6">
+          {/* Desktop Menu */}
+          <div className="hidden lg:flex items-center gap-6">
             <select 
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
@@ -1039,10 +1811,25 @@ const Navbar = ({
               )}
             </select>
             <Link to="/" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Store</Link>
-            {isAdmin ? (
+            
+            {isAdmin && (
               <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Merchant Portal</Link>
-            ) : (
-              <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Sell on MAC8</Link>
+            )}
+
+            {isSeller && (
+              <Link to="/seller" className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1">
+                <Store className="w-4 h-4" />
+                Seller Dashboard
+              </Link>
+            )}
+
+            {!isAdmin && !isSeller && (
+              <button 
+                onClick={becomeSeller}
+                className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors"
+              >
+                Sell on Dropship Pro
+              </button>
             )}
             
             {user ? (
@@ -1082,6 +1869,95 @@ const Navbar = ({
             )}
 
             {!isAdmin && (
+              <div 
+                className="relative"
+                onMouseEnter={() => setIsCartHovered(true)}
+                onMouseLeave={() => setIsCartHovered(false)}
+              >
+                <Link to="/cart" className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors block">
+                  <ShoppingCart className="w-6 h-6" />
+                  {cartCount > 0 && (
+                    <span className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      {cartCount}
+                    </span>
+                  )}
+                </Link>
+
+                <AnimatePresence>
+                  {isCartHovered && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-[60]"
+                    >
+                      <div className="p-4 border-b border-gray-50 bg-gray-50/50">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Your Cart</h3>
+                          <span className="text-[10px] font-bold bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                            {cartCount} {cartCount === 1 ? 'Item' : 'Items'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto p-4 space-y-4">
+                        {cart.length === 0 ? (
+                          <div className="text-center py-8">
+                            <ShoppingCart className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                            <p className="text-xs text-gray-400 font-medium">Your cart is empty</p>
+                          </div>
+                        ) : (
+                          cart.slice(0, 3).map((item) => (
+                            <div key={item.cartId} className="flex gap-3">
+                              <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-50 shrink-0 border border-gray-100">
+                                <img 
+                                  src={item.image} 
+                                  alt={item.title} 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-bold text-gray-900 truncate">{item.title}</div>
+                                <div className="text-[10px] text-gray-500 mt-0.5">Qty: {item.quantity}</div>
+                                <div className="text-[10px] font-bold text-indigo-600 mt-0.5">
+                                  {formatPrice(item.price * (1 + item.markup / 100), currency, rates, item.sourceCurrency)}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        {cart.length > 3 && (
+                          <div className="text-[10px] text-center text-gray-400 font-medium pt-2 border-t border-gray-50">
+                            + {cart.length - 3} more items
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-4 bg-gray-50 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Subtotal</span>
+                          <span className="text-sm font-bold text-gray-900">
+                            {formatPrice(cartTotal, currency, rates, 'USD')}
+                          </span>
+                        </div>
+                        <Link 
+                          to="/cart"
+                          className="block w-full bg-indigo-600 text-white text-center py-3 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100"
+                        >
+                          View Full Cart
+                        </Link>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Menu Toggle */}
+          <div className="flex lg:hidden items-center gap-4">
+            {!isAdmin && (
               <Link to="/cart" className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors">
                 <ShoppingCart className="w-6 h-6" />
                 {cartCount > 0 && (
@@ -1091,9 +1967,119 @@ const Navbar = ({
                 )}
               </Link>
             )}
+            <button 
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 text-gray-600 hover:text-indigo-600 transition-colors"
+            >
+              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Mobile Menu Content */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="lg:hidden border-t border-gray-100 bg-white overflow-hidden"
+          >
+            <div className="px-4 py-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">Currency</span>
+                <select 
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none"
+                >
+                  {Object.keys(rates).length > 0 ? (
+                    Object.keys(rates).sort().map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))
+                  ) : (
+                    <option value="USD">USD</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="space-y-4">
+                <Link to="/" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-gray-900 hover:text-indigo-600">Store</Link>
+                
+                {isAdmin && (
+                  <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-gray-900 hover:text-indigo-600">Merchant Portal</Link>
+                )}
+
+                {isSeller && (
+                  <Link to="/seller" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
+                    <Store className="w-5 h-5" />
+                    Seller Dashboard
+                  </Link>
+                )}
+
+                {!isAdmin && !isSeller && (
+                  <button 
+                    onClick={() => {
+                      becomeSeller();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="block w-full text-left text-lg font-bold text-gray-900 hover:text-indigo-600"
+                  >
+                    Sell on Dropship Pro
+                  </button>
+                )}
+              </div>
+
+              <div className="pt-6 border-t border-gray-100">
+                {user ? (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      {user.photoURL ? (
+                        <img 
+                          src={user.photoURL || null} 
+                          alt={user.displayName || ""} 
+                          className="w-12 h-12 rounded-full border border-gray-200" 
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-lg">
+                          {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Logged in as</div>
+                        <div className="text-sm font-bold text-gray-900">{user.displayName || user.email}</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        handleLogout();
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-red-50 text-red-600 py-3 rounded-xl font-bold hover:bg-red-100 transition-colors"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      Logout
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => {
+                      setShowAuthModal(true);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100"
+                  >
+                    <LogIn className="w-5 h-5" />
+                    Login / Register
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showAuthModal && (
@@ -1303,17 +2289,29 @@ const Storefront = ({
   user: User | null;
 }) => {
   const [search, setSearch] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000]);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedVariationFilters, setSelectedVariationFilters] = useState<{ [key: string]: string[] }>({});
   
-  // Temporary state for filters before applying
-  const [pendingPriceRange, setPendingPriceRange] = useState<[number, number]>([0, 10000]);
-  const [pendingVariationFilters, setPendingVariationFilters] = useState<{ [key: string]: string[] }>({});
-  const [pendingCategory, setPendingCategory] = useState<string>('All');
-
   const categories = ['All', ...new Set(products.map(p => p.category || 'General'))];
+  
+  const fuse = useMemo(() => new Fuse(products.filter(p => p.status === 'approved'), {
+    keys: ['title', 'description', 'category'],
+    threshold: 0.3,
+    distance: 100,
+  }), [products]);
+
+  const suggestions = useMemo(() => {
+    if (!search.trim()) return [];
+    return fuse.search(search).slice(0, 5).map(r => r.item);
+  }, [search, fuse]);
+
+  const handleCategorySelect = (cat: string) => {
+    setSelectedCategory(cat);
+  };
+
   const allVariations = products.reduce((acc, p) => {
     p.variations?.forEach(v => {
       if (!acc[v.name]) acc[v.name] = new Set();
@@ -1322,39 +2320,41 @@ const Storefront = ({
     return acc;
   }, {} as { [key: string]: Set<string> });
 
-  const approvedProducts = products.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase());
-    const finalPrice = (p.price * (1 + p.markup / 100)) / (rates[p.sourceCurrency] || 1);
-    const matchesPrice = finalPrice >= priceRange[0] && finalPrice <= priceRange[1];
-    const matchesCategory = selectedCategory === 'All' || (p.category || 'General') === selectedCategory;
-    const matchesVariations = (Object.entries(selectedVariationFilters) as [string, string[]][]).every(([vName, vOpts]) => {
-      if (vOpts.length === 0) return true;
-      return p.variations?.some(v => v.name === vName && v.options.some(opt => vOpts.includes(opt.name)));
+  const approvedProducts = useMemo(() => {
+    let filtered = products.filter(p => p.status === 'approved');
+
+    if (search.trim()) {
+      filtered = fuse.search(search).map(r => r.item);
+    }
+
+    return filtered.filter(p => {
+      const finalPrice = (p.price * (1 + p.markup / 100)) / (rates[p.sourceCurrency] || 1);
+      const matchesPrice = finalPrice >= priceRange[0] && finalPrice <= priceRange[1];
+      const matchesCategory = selectedCategory === 'All' || (p.category || 'General') === selectedCategory;
+      const matchesVariations = (Object.entries(selectedVariationFilters) as [string, string[]][]).every(([vName, vOpts]) => {
+        if (vOpts.length === 0) return true;
+        return p.variations?.some(v => v.name === vName && v.options.some(opt => vOpts.includes(opt.name)));
+      });
+
+      return matchesPrice && matchesCategory && matchesVariations;
     });
+  }, [products, search, fuse, priceRange, selectedCategory, selectedVariationFilters, rates]);
 
-    return p.status === 'approved' && matchesSearch && matchesPrice && matchesCategory && matchesVariations;
-  });
-
-  const applyFilters = () => {
-    setPriceRange(pendingPriceRange);
-    setSelectedVariationFilters(pendingVariationFilters);
-    setSelectedCategory(pendingCategory);
-  };
+  const isFilterActive = search !== '' || 
+    selectedCategory !== 'All' || 
+    priceRange[0] !== 0 || 
+    priceRange[1] !== 10000 || 
+    Object.values(selectedVariationFilters).some((v: any) => v.length > 0);
 
   const resetFilters = () => {
-    setPendingPriceRange([0, 10000]);
-    setPendingVariationFilters({});
-    setPendingCategory('All');
     setSearch('');
-    
     setPriceRange([0, 10000]);
     setSelectedVariationFilters({});
     setSelectedCategory('All');
   };
 
   const toggleVariationOption = (vName: string, opt: string) => {
-    setPendingVariationFilters(prev => {
+    setSelectedVariationFilters(prev => {
       const current = prev[vName] || [];
       const next = current.includes(opt) 
         ? current.filter(o => o !== opt) 
@@ -1374,12 +2374,13 @@ const Storefront = ({
             currency={currency}
             rates={rates}
             isAdmin={isAdmin}
+            user={user}
           />
         )}
       </AnimatePresence>
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gray-900 py-24 sm:py-32">
+      <section className="relative overflow-hidden bg-gray-900 py-16 sm:py-24 lg:py-32">
         <img
           src="https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80"
           alt="Hero background"
@@ -1394,21 +2395,21 @@ const Storefront = ({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl mb-6">
+              <h1 className="text-3xl font-bold tracking-tight text-white sm:text-6xl mb-6">
                 Global Products, <br />
                 <span className="text-indigo-400">Local Delivery.</span>
               </h1>
-              <p className="text-lg leading-8 text-gray-300 mb-10">
+              <p className="text-base sm:text-lg leading-7 sm:leading-8 text-gray-300 mb-8 sm:mb-10">
                 Discover a curated collection of premium goods from around the world. 
                 Fast, secure, and reliable shopping experience in Dar es Salaam.
               </p>
-              <div className="flex items-center gap-x-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-x-6">
                 <button 
                   onClick={() => {
                     const el = document.getElementById('products-grid');
                     el?.scrollIntoView({ behavior: 'smooth' });
                   }}
-                  className="rounded-xl bg-indigo-600 px-8 py-4 text-sm font-bold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all"
+                  className="w-full sm:w-auto rounded-xl bg-indigo-600 px-8 py-4 text-sm font-bold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all"
                 >
                   Shop Now
                 </button>
@@ -1418,7 +2419,7 @@ const Storefront = ({
               </div>
             </motion.div>
           </div>
-          <div className="mx-auto mt-16 grid max-w-2xl grid-cols-1 gap-6 sm:mt-20 lg:mx-0 lg:max-w-none lg:grid-cols-3">
+          <div className="mx-auto mt-12 sm:mt-16 grid max-w-2xl grid-cols-1 gap-4 sm:gap-6 sm:mt-20 lg:mx-0 lg:max-w-none lg:grid-cols-3">
             {[
               { title: 'Verified Sellers', desc: 'Every merchant is vetted for quality.', icon: ShieldCheck },
               { title: 'Secure Escrow', desc: 'Funds held safely until delivery.', icon: CreditCard },
@@ -1444,27 +2445,104 @@ const Storefront = ({
 
       <div id="products-grid" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <header className="mb-12">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-8">
             <div>
-              <h2 className="text-4xl font-extrabold text-gray-900 tracking-tight mb-4">Featured Products</h2>
-              <p className="text-lg text-gray-500 max-w-2xl">Premium products sourced globally, delivered directly to your door.</p>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight mb-4">Featured Products</h2>
+              <p className="text-base sm:text-lg text-gray-500 max-w-2xl">Premium products sourced globally, delivered directly to your door.</p>
             </div>
-            <div className="w-full md:w-80">
+            <div className="w-full lg:w-80 relative">
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input 
                   type="text"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="Search products..."
                   className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
                 />
               </div>
+
+              {/* Search Suggestions */}
+              <AnimatePresence>
+                {showSuggestions && suggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="absolute left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-[70]"
+                  >
+                    <div className="p-3 border-b border-gray-50 bg-gray-50/50 flex items-center gap-2">
+                      <Sparkles className="w-3 h-3 text-indigo-500" />
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Smart Suggestions</span>
+                    </div>
+                    <div className="p-2">
+                      {suggestions.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setSearch(p.title);
+                            setShowSuggestions(false);
+                          }}
+                          className="w-full flex items-center gap-3 p-2 hover:bg-indigo-50 rounded-xl transition-colors text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-50 shrink-0 border border-gray-100">
+                            <img src={p.image} alt={p.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors">{p.title}</div>
+                            <div className="text-[10px] text-gray-500 truncate">{p.category}</div>
+                          </div>
+                          <ChevronRight className="w-3 h-3 text-gray-300 group-hover:text-indigo-400" />
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
-          <div className="bg-gray-50 p-8 rounded-3xl border border-gray-100 shadow-sm">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
+          {/* Quick Category Bar */}
+          <div className="flex items-center gap-4 mb-8 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex-none text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-widest mr-2">Quick Filter:</div>
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => handleCategorySelect(cat)}
+                className={cn(
+                  "flex-none px-4 py-2 sm:px-6 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold transition-all whitespace-nowrap",
+                  selectedCategory === cat 
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" 
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+            
+            <AnimatePresence>
+              {isFilterActive && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  onClick={resetFilters}
+                  className="flex-none px-4 py-2 sm:px-6 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold bg-red-50 text-red-600 hover:bg-red-100 transition-all flex items-center gap-2 border border-red-100"
+                >
+                  <X className="w-4 h-4" />
+                  Clear All
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="bg-gray-50 p-4 sm:p-8 rounded-3xl border border-gray-100 shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
               {/* Category Filter */}
               <div className="space-y-4">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Category</label>
@@ -1472,10 +2550,10 @@ const Storefront = ({
                   {categories.map(cat => (
                     <button
                       key={cat}
-                      onClick={() => setPendingCategory(cat)}
+                      onClick={() => handleCategorySelect(cat)}
                       className={cn(
-                        "px-4 py-2 rounded-xl text-xs font-bold transition-all",
-                        pendingCategory === cat 
+                        "px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold transition-all",
+                        selectedCategory === cat 
                           ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" 
                           : "bg-white text-gray-600 border border-gray-200 hover:border-indigo-300"
                       )}
@@ -1490,14 +2568,14 @@ const Storefront = ({
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Price Range</label>
-                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
-                    {pendingPriceRange[0]} - {pendingPriceRange[1]} {currency}
+                  <span className="text-[10px] sm:text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
+                    {priceRange[0]} - {priceRange[1]} {currency}
                   </span>
                 </div>
                 <Slider.Root
                   className="relative flex items-center select-none touch-none w-full h-5"
-                  value={pendingPriceRange}
-                  onValueChange={(val) => setPendingPriceRange(val as [number, number])}
+                  value={priceRange}
+                  onValueChange={(val) => setPriceRange(val as [number, number])}
                   max={10000}
                   step={100}
                   minStepsBetweenThumbs={1}
@@ -1506,28 +2584,28 @@ const Storefront = ({
                     <Slider.Range className="absolute bg-indigo-600 rounded-full h-full" />
                   </Slider.Track>
                   <Slider.Thumb
-                    className="block w-5 h-5 bg-white border-2 border-indigo-600 shadow-lg rounded-full hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    className="block w-4 h-4 sm:w-5 sm:h-5 bg-white border-2 border-indigo-600 shadow-lg rounded-full hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                     aria-label="Min price"
                   />
                   <Slider.Thumb
-                    className="block w-5 h-5 bg-white border-2 border-indigo-600 shadow-lg rounded-full hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    className="block w-4 h-4 sm:w-5 sm:h-5 bg-white border-2 border-indigo-600 shadow-lg rounded-full hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                     aria-label="Max price"
                   />
                 </Slider.Root>
-                <div className="flex justify-between text-[10px] font-bold text-gray-400">
+                <div className="flex justify-between text-[9px] sm:text-[10px] font-bold text-gray-400">
                   <span>0 {currency}</span>
                   <span>10,000+ {currency}</span>
                 </div>
               </div>
 
               {/* Variation Filters (Multi-select) */}
-              <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
                 {Object.entries(allVariations).map(([vName, vOpts]) => (
                   <div key={vName} className="space-y-4">
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">{vName}</label>
                     <div className="flex flex-wrap gap-2">
                       {[...vOpts].map(opt => {
-                        const isSelected = pendingVariationFilters[vName]?.includes(opt);
+                        const isSelected = selectedVariationFilters[vName]?.includes(opt);
                         return (
                           <button
                             key={opt}
@@ -1553,7 +2631,7 @@ const Storefront = ({
             <div className="mt-10 pt-8 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <Info className="w-4 h-4" />
-                <span>Adjust filters and click apply to update the results.</span>
+                <span>Filters are applied instantly as you make changes.</span>
               </div>
               <div className="flex items-center gap-4 w-full sm:w-auto">
                 <button
@@ -1561,14 +2639,7 @@ const Storefront = ({
                   className="flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition-all flex items-center justify-center gap-2"
                 >
                   <X className="w-4 h-4" />
-                  Reset
-                </button>
-                <button
-                  onClick={applyFilters}
-                  className="flex-1 sm:flex-none px-8 py-3 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  Apply Filters
+                  Clear All Filters
                 </button>
               </div>
             </div>
@@ -1627,7 +2698,15 @@ const Storefront = ({
                       </span>
                     </div>
                     <h3 className="text-sm font-semibold text-gray-900 mb-2 line-clamp-2 min-h-[2.5rem] group-hover:text-indigo-600 transition-colors">{product.title}</h3>
-                    <p className="text-xs text-gray-500 line-clamp-2 mb-3">{product.description}</p>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-gray-500 line-clamp-1">{product.description}</p>
+                      {product.sellerName && (
+                        <div className="flex items-center gap-1 text-[9px] font-bold text-gray-400 uppercase tracking-tighter">
+                          <Store className="w-2.5 h-2.5" />
+                          {product.sellerName}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mt-auto">
@@ -1727,20 +2806,36 @@ const AdminPanel = ({
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
 
   const getDailyStats = () => {
-    const stats: { [key: string]: { date: string, Revenue: number, Profit: number, Cost: number } } = {};
+    const stats: { [key: string]: { date: string, Revenue: number, Profit: number, Cost: number, Orders: number } } = {};
     orders.forEach(o => {
       const date = new Date(o.createdAt).toLocaleDateString();
       if (!stats[date]) {
-        stats[date] = { date, Revenue: 0, Profit: 0, Cost: 0 };
+        stats[date] = { date, Revenue: 0, Profit: 0, Cost: 0, Orders: 0 };
       }
       stats[date].Revenue += o.total;
       stats[date].Profit += o.profit || 0;
       stats[date].Cost += (o.sourceCost || 0) + (o.shippingCost || 0);
+      stats[date].Orders += 1;
     });
     return Object.values(stats).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(-7);
   };
 
+  const getTopProducts = () => {
+    const productStats: { [key: string]: { title: string, sales: number, revenue: number, image: string | null } } = {};
+    orders.forEach(o => {
+      o.items.forEach(item => {
+        if (!productStats[item.id]) {
+          productStats[item.id] = { title: item.title, sales: 0, revenue: 0, image: item.image || null };
+        }
+        productStats[item.id].sales += item.quantity;
+        productStats[item.id].revenue += (item.price * (1 + item.markup / 100)) * item.quantity;
+      });
+    });
+    return Object.values(productStats).sort((a, b) => b.sales - a.sales).slice(0, 5);
+  };
+
   const dailyStats = getDailyStats();
+  const topProducts = getTopProducts();
 
   useEffect(() => {
     localStorage.setItem('dropship_default_markup', markup.toString());
@@ -1750,34 +2845,66 @@ const AdminPanel = ({
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
-    try {
-      // Update status to processing
-      await updateOrder(orderId, { automationStatus: 'processing', automationLog: ['Starting fulfillment simulation...'] });
+    const addLog = async (msg: string, currentLogs: string[]) => {
+      const timestamp = new Date().toLocaleTimeString();
+      const newLog = `[${timestamp}] ${msg}`;
+      const updatedLogs = [...currentLogs, newLog];
+      await updateOrder(orderId, { automationLog: updatedLogs });
+      return updatedLogs;
+    };
 
-      const response = await fetch('/api/fulfill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.id,
-          customer: order.customer,
-          items: order.items
-        })
+    try {
+      let logs: string[] = [];
+      
+      // 1. Processing
+      await updateOrder(orderId, { automationStatus: 'processing', automationLog: [] });
+      logs = await addLog("Initiating automated fulfillment engine...", logs);
+      
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      logs = await addLog("Connecting to supplier API (Alibaba/AliExpress)...", logs);
+      
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      logs = await addLog("Authenticating with supplier credentials...", logs);
+      
+      // 2. Financial Split
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const totalProfit = order.profit || 0;
+      const referralCommission = order.customer.referredBy ? totalProfit * 0.3 : 0;
+      const ownerProfit = totalProfit - referralCommission;
+      
+      logs = await addLog(`Financial Split: Source Cost ($${order.sourceCost.toFixed(2)}), Owner Profit ($${ownerProfit.toFixed(2)}), Referral Commission ($${referralCommission.toFixed(2)})`, logs);
+      await updateOrder(orderId, { referralCommission, ownerProfit });
+
+      // 3. Item Processing
+      for (const item of order.items) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        logs = await addLog(`Placing order on supplier site for: "${item.title}"...`, logs);
+        
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        logs = await addLog(`Entering customer shipping details for ${order.customer.name}...`, logs);
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        logs = await addLog(`Address: ${order.customer.address}, ${order.customer.city}, ${order.customer.country}`, logs);
+      }
+
+      // 4. Payment
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      logs = await addLog("Payment processed successfully via Supplier Business Wallet.", logs);
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const sourceOrderId = `SUP-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      logs = await addLog(`Supplier order confirmed! Source Order ID: ${sourceOrderId}`, logs);
+      
+      // 5. Completion
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      logs = await addLog("Fulfillment complete. Customer notified.", logs);
+      
+      await updateOrder(orderId, { 
+        automationStatus: 'completed', 
+        status: 'fulfilled',
+        automationLog: logs
       });
 
-      const result = await response.json();
-
-      if (response.ok) {
-        await updateOrder(orderId, { 
-          automationStatus: 'completed', 
-          automationLog: result.logs,
-          status: 'fulfilled'
-        });
-      } else {
-        await updateOrder(orderId, { 
-          automationStatus: 'failed', 
-          automationLog: [...(order.automationLog || []), `Error: ${result.error}`]
-        });
-      }
     } catch (error) {
       console.error('Fulfillment error:', error);
       await updateOrder(orderId, { 
@@ -1810,6 +2937,18 @@ const AdminPanel = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: targetUrl }),
           });
+          
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Server error (${res.status}): ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+          }
+          
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const text = await res.text();
+            throw new Error(`Unexpected response format: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+          }
+
           const data = await res.json();
           if (data.error) throw new Error(data.error);
           
@@ -1838,6 +2977,18 @@ const AdminPanel = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url }),
         });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Server error (${res.status}): ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+        }
+
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await res.text();
+          throw new Error(`Unexpected response format: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+        }
+
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         
@@ -2056,7 +3207,7 @@ const AdminPanel = ({
             exit={{ opacity: 0, y: -20 }}
             className="space-y-8"
           >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
@@ -2102,11 +3253,32 @@ const AdminPanel = ({
             <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Orders</div>
+                  <div className="text-2xl font-bold text-orange-600">
+                    {orders.length}
+                  </div>
+                </div>
+              </div>
+              <div className="h-24 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dailyStats}>
+                    <Area type="monotone" dataKey="Orders" stroke="#f97316" fill="#ffedd5" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600">
                   <BarChart3 className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Avg. Profit / Order</div>
-                  <div className="text-2xl font-bold text-orange-600">
+                  <div className="text-2xl font-bold text-purple-600">
                     {formatPrice(orders.length > 0 ? orders.reduce((sum, o) => sum + (o.profit || 0), 0) / orders.length : 0, currency, rates, 'USD')}
                   </div>
                 </div>
@@ -2114,112 +3286,138 @@ const AdminPanel = ({
               <div className="h-24 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={dailyStats}>
-                    <Area type="monotone" dataKey="Profit" stroke="#f97316" fill="#ffedd5" />
+                    <Area type="monotone" dataKey="Profit" stroke="#8b5cf6" fill="#ede9fe" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold mb-6">Financial Performance (Last 7 Days)</h3>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyStats}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Bar dataKey="Revenue" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Cost" fill="#f97316" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Profit" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-bold mb-6">Profit by Category</h3>
-              <div className="h-64 w-full">
+              <h3 className="text-lg font-bold mb-6">Financial Performance (Last 7 Days)</h3>
+              <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={Array.from(new Set(orders.flatMap(o => o.items.map(i => i.category || 'General')))).map(cat => ({
-                        name: cat,
-                        value: orders.reduce((sum, o) => sum + o.items.filter(i => (i.category || 'General') === cat).reduce((s, i) => {
-                          const itemProfit = (i.price * (i.markup / 100)) - (i.shippingCost || 0);
-                          return s + (itemProfit * i.quantity);
-                        }, 0), 0)
-                      })).filter(d => d.value > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {Array.from(new Set(orders.flatMap(o => o.items.map(i => i.category || 'General')))).map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={['#4f46e5', '#10b981', '#f97316', '#8b5cf6', '#ec4899'][index % 5]} />
-                      ))}
-                    </Pie>
+                  <BarChart data={dailyStats}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
                     <Tooltip 
-                      formatter={(value: number) => formatPrice(value, 'USD', rates, 'USD')}
                       contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                     />
-                    <Legend />
-                  </PieChart>
+                    <Bar dataKey="Revenue" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Cost" fill="#f97316" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Profit" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-bold mb-6">Top Selling Categories</h3>
+              <h3 className="text-lg font-bold mb-6">Order Volume Trend</h3>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dailyStats}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Area type="monotone" dataKey="Orders" stroke="#f97316" fill="#ffedd5" strokeWidth={3} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold">Top Selling Products</h3>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">By Sales Volume</div>
+              </div>
               <div className="space-y-4">
-                {Array.from(new Set(orders.flatMap(o => o.items.map(i => i.category || 'General')))).map(cat => {
-                  const count = orders.reduce((sum, o) => sum + o.items.filter(i => (i.category || 'General') === cat).length, 0);
-                  const total = orders.reduce((sum, o) => sum + o.items.length, 0);
-                  const percent = (count / total) * 100;
-                  return (
-                    <div key={cat}>
-                      <div className="flex justify-between text-xs font-bold mb-2">
-                        <span>{cat}</span>
-                        <span>{count} Sales ({percent.toFixed(1)}%)</span>
-                      </div>
-                      <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                        <div className="bg-indigo-600 h-full" style={{ width: `${percent}%` }} />
-                      </div>
+                {topProducts.map((product, i) => (
+                  <div key={i} className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:bg-white hover:shadow-md transition-all group">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-gray-200 shrink-0">
+                      <img src={product.image || undefined} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
-                  );
-                })}
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-bold text-gray-900 truncate">{product.title}</h4>
+                      <p className="text-xs text-gray-500">{product.sales} units sold</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-indigo-600">{formatPrice(product.revenue, currency, rates, 'USD')}</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-tighter">Revenue</div>
+                    </div>
+                  </div>
+                ))}
+                {topProducts.length === 0 && (
+                  <div className="text-center py-12 text-gray-400 italic">No sales data yet</div>
+                )}
               </div>
             </div>
 
-            <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-bold mb-6">Profit Breakdown</h3>
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-indigo-600 rounded-full" />
-                    <span className="text-sm text-gray-600">Product Costs</span>
-                  </div>
-                  <span className="font-bold">{formatPrice(orders.reduce((sum, o) => sum + (o.sourceCost || 0), 0), currency, rates, 'USD')}</span>
+            <div className="space-y-8">
+              <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-bold mb-6">Profit by Category</h3>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={Array.from(new Set(orders.flatMap(o => o.items.map(i => i.category || 'General')))).map(cat => ({
+                          name: cat,
+                          value: orders.reduce((sum, o) => sum + o.items.filter(i => (i.category || 'General') === cat).reduce((s, i) => {
+                            const itemProfit = (i.price * (i.markup / 100)) - (i.shippingCost || 0);
+                            return s + (itemProfit * i.quantity);
+                          }, 0), 0)
+                        })).filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {Array.from(new Set(orders.flatMap(o => o.items.map(i => i.category || 'General')))).map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={['#4f46e5', '#10b981', '#f97316', '#8b5cf6', '#ec4899'][index % 5]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: number) => formatPrice(value, 'USD', rates, 'USD')}
+                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full" />
-                    <span className="text-sm text-gray-600">Shipping Costs</span>
+              </div>
+
+              <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-bold mb-6">Profit Breakdown</h3>
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 bg-indigo-600 rounded-full" />
+                      <span className="text-sm text-gray-600">Product Costs</span>
+                    </div>
+                    <span className="font-bold">{formatPrice(orders.reduce((sum, o) => sum + (o.sourceCost || 0), 0), currency, rates, 'USD')}</span>
                   </div>
-                  <span className="font-bold">{formatPrice(orders.reduce((sum, o) => sum + (o.shippingCost || 0), 0), currency, rates, 'USD')}</span>
-                </div>
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-green-500 rounded-full" />
-                    <span className="text-sm font-bold">Net Profit</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                      <span className="text-sm text-gray-600">Shipping Costs</span>
+                    </div>
+                    <span className="font-bold">{formatPrice(orders.reduce((sum, o) => sum + (o.shippingCost || 0), 0), currency, rates, 'USD')}</span>
                   </div>
-                  <span className="font-bold text-green-600">{formatPrice(orders.reduce((sum, o) => sum + (o.profit || 0), 0), currency, rates, 'USD')}</span>
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                      <span className="text-sm font-bold">Net Profit</span>
+                    </div>
+                    <span className="font-bold text-green-600">{formatPrice(orders.reduce((sum, o) => sum + (o.profit || 0), 0), currency, rates, 'USD')}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2844,10 +4042,18 @@ const AdminPanel = ({
                               {formatPrice(order.sourceCost || order.items.reduce((sum, item) => sum + (item.price * item.quantity) / (rates[item.sourceCurrency] || 1), 0), order.currency || 'USD', rates, 'USD')}
                             </span>
                           </div>
+                          {order.referralCommission !== undefined && order.referralCommission > 0 && (
+                            <div className="flex justify-between text-[10px]">
+                              <span className="text-gray-400">Referral (3%):</span>
+                              <span className="font-bold text-blue-500">
+                                {formatPrice(order.referralCommission, order.currency || 'USD', rates, 'USD')}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex justify-between text-xs pt-1 border-t border-gray-100">
-                            <span className="text-gray-500">Your Profit:</span>
+                            <span className="text-gray-500">Net Profit:</span>
                             <span className="font-bold text-green-600">
-                              {formatPrice(order.profit || 0, order.currency || 'USD', rates, 'USD')}
+                              {formatPrice(order.ownerProfit || order.profit || 0, order.currency || 'USD', rates, 'USD')}
                             </span>
                           </div>
                         </div>
@@ -2903,7 +4109,7 @@ const AdminPanel = ({
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-2">
                           <AutomationLogView logs={order.automationLog} />
-                          {order.status === 'paid' && order.automationStatus !== 'processing' && (
+                          {order.status === 'paid' && (order.automationStatus === 'idle' || !order.automationStatus) && (
                             <button 
                               onClick={() => handleFulfill(order.id)}
                               className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest bg-indigo-50 px-2 py-1 rounded-lg"
@@ -3192,6 +4398,7 @@ const AdminPanel = ({
           currency="USD"
           rates={rates}
           isAdmin={true}
+          user={user}
         />
       )}
     </AnimatePresence>
@@ -3267,6 +4474,41 @@ const CartPage = ({
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [mapsLink, setMapsLink] = useState('');
   const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
+
+  const validateForm = () => {
+    const errors: { [key: string]: string } = {};
+    if (!customer.name.trim()) errors.name = "Full name is required";
+    if (!customer.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) {
+      errors.email = "Valid email is required";
+    }
+    if (!customer.phone.trim() || customer.phone.length < 8) {
+      errors.phone = "Valid phone number is required (min 8 chars)";
+    }
+    if (!customer.address.trim() || customer.address.length < 5) {
+      errors.address = "Valid shipping address is required (min 5 chars)";
+    }
+    if (!customer.city.trim() || customer.city.length < 2) {
+      errors.city = "City is required";
+    }
+    if (!customer.country.trim() || customer.country.length < 2) {
+      errors.country = "Country is required";
+    }
+    if (!customer.zip.trim() || !/^[a-zA-Z0-9\s-]{3,10}$/.test(customer.zip)) {
+      errors.zip = "Valid ZIP/Postal code is required (3-10 chars)";
+    }
+    return errors;
+  };
+
+  const handleInputChange = (field: keyof CustomerInfo, value: string) => {
+    setCustomer(prev => ({ ...prev, [field]: value }));
+    if (validationErrors[field]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
 
   const triggerFulfillment = async (order: Order) => {
     try {
@@ -3451,19 +4693,9 @@ const CartPage = ({
       return;
     }
 
-    // Validation
-    const errors: { [key: string]: string } = {};
-    if (!customer.name.trim()) errors.name = "Full name is required";
-    if (!customer.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = "Valid email is required";
-    if (!customer.phone.trim() || customer.phone.length < 8) errors.phone = "Valid phone number is required (min 8 chars)";
-    if (!customer.address.trim() || customer.address.length < 5) errors.address = "Valid shipping address is required (min 5 chars)";
-    if (!customer.city.trim() || customer.city.length < 2) errors.city = "City is required";
-    if (!customer.country.trim() || customer.country.length < 2) errors.country = "Country is required";
-    if (!customer.zip.trim() || !/^[a-zA-Z0-9\s-]{3,10}$/.test(customer.zip)) errors.zip = "Valid ZIP/Postal code is required (3-10 chars)";
-
+    const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
-      // Scroll to first error
       const firstErrorField = Object.keys(errors)[0];
       const element = document.getElementById(`field-${firstErrorField}`);
       element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3503,10 +4735,9 @@ const CartPage = ({
           profit: profitUSD,
           paymentMethod,
           status: 'paid',
-          automationStatus: 'processing',
+          automationStatus: 'idle',
           automationLog: [
             `[SYSTEM] ${paymentMethod === 'mpesa' ? 'M-Pesa' : 'Bank Transfer'} payment confirmed. Total: ${formatPrice(totalUSD, 'USD', rates, 'USD')}. Funds held in Escrow.`,
-            `[SYSTEM] Split: Full Profit to Owner ($${profitUSD.toFixed(2)}).`,
             `[SYSTEM] Source Cost ($${sourceCostUSD.toFixed(2)}) allocated to Fulfillment Bridge.`
           ],
           createdAt: new Date().toISOString(),
@@ -3515,7 +4746,6 @@ const CartPage = ({
         await addOrder(newOrder);
         setStep('success');
         setCart([]);
-        triggerFulfillment(newOrder);
       }
     } catch (err) {
       console.error('Checkout failed:', err);
@@ -3541,24 +4771,24 @@ const CartPage = ({
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-12">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+    <div className="max-w-7xl mx-auto px-4 py-8 sm:py-12">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
         <div className="lg:col-span-2">
           {step === 'cart' ? (
             <>
-              <h1 className="text-3xl font-bold mb-8">Shopping Cart</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8">Shopping Cart</h1>
               {cart.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50 rounded-2xl">
                   <p className="text-gray-500 mb-6">Your cart is empty.</p>
                   <Link to="/" className="text-indigo-600 font-bold">Start Shopping</Link>
                 </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6">
                   {cart.map(item => (
-                    <div key={item.cartId} className="flex gap-6 bg-white p-6 rounded-2xl border border-gray-100">
-                      <img src={item.image || null} className="w-24 h-24 object-cover rounded-xl" referrerPolicy="no-referrer" />
+                    <div key={item.cartId} className="flex flex-col sm:flex-row gap-4 sm:gap-6 bg-white p-4 sm:p-6 rounded-2xl border border-gray-100">
+                      <img src={item.image || null} className="w-full sm:w-24 h-48 sm:h-24 object-cover rounded-xl" referrerPolicy="no-referrer" />
                       <div className="flex-1">
-                        <h3 className="font-bold text-gray-900 mb-1">{item.title}</h3>
+                        <h3 className="font-bold text-gray-900 mb-1 text-sm sm:text-base">{item.title}</h3>
                         {item.selectedVariations && Object.entries(item.selectedVariations).length > 0 && (
                           <div className="flex flex-wrap gap-2 mb-3">
                             {Object.entries(item.selectedVariations).map(([name, value]) => (
@@ -3568,21 +4798,21 @@ const CartPage = ({
                             ))}
                           </div>
                         )}
-                        <p className="text-indigo-600 font-bold mb-4">{formatPrice(item.price * (1 + item.markup / 100), currency, rates, item.sourceCurrency)}</p>
-                        <div className="flex items-center gap-4">
+                        <p className="text-indigo-600 font-bold mb-4 text-sm sm:text-base">{formatPrice(item.price * (1 + item.markup / 100), currency, rates, item.sourceCurrency)}</p>
+                        <div className="flex items-center justify-between sm:justify-start gap-4">
                           <select 
                             value={item.quantity}
                             onChange={(e) => {
                               const q = Number(e.target.value);
                               setCart(prev => prev.map(i => i.cartId === item.cartId ? { ...i, quantity: q } : i));
                             }}
-                            className="bg-gray-50 border-none rounded-lg px-3 py-1 text-sm outline-none"
+                            className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm outline-none font-bold"
                           >
-                            {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+                            {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
                           </select>
                           <button 
                             onClick={() => setCart(prev => prev.filter(i => i.cartId !== item.cartId))}
-                            className="text-gray-400 hover:text-red-500 text-sm font-medium"
+                            className="text-gray-400 hover:text-red-500 text-sm font-bold transition-colors"
                           >
                             Remove
                           </button>
@@ -3595,29 +4825,30 @@ const CartPage = ({
             </>
           ) : (
             <>
-              <button onClick={() => setStep('cart')} className="text-sm font-bold text-indigo-600 mb-6 flex items-center gap-1">
+              <button onClick={() => setStep('cart')} className="text-sm font-bold text-indigo-600 mb-6 flex items-center gap-1 hover:gap-2 transition-all">
+                <ChevronRight className="w-4 h-4 rotate-180" />
                 Back to Cart
               </button>
-                <div className="flex justify-between items-center mb-8">
-                  <h1 className="text-3xl font-bold">Shipping Details</h1>
-                  <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                  <h1 className="text-2xl sm:text-3xl font-bold">Shipping Details</h1>
+                  <div className="flex flex-wrap gap-2">
                     <button 
                       type="button"
                       disabled={isProcessing}
                       onClick={() => setShowLocationModal(true)}
-                      className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-2"
+                      className="flex-1 sm:flex-none text-[10px] sm:text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <ExternalLink className="w-3 h-3" />
-                      Paste Google Maps Link
+                      Maps Link
                     </button>
                     <button 
                       type="button"
                       disabled={isProcessing}
                       onClick={handleAutoDetect}
-                      className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-2"
+                      className="flex-1 sm:flex-none text-[10px] sm:text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <Smartphone className="w-3 h-3" />
-                      {isProcessing ? 'Detecting...' : 'Auto-detect Location'}
+                      {isProcessing ? 'Detecting...' : 'Auto-detect'}
                     </button>
                   </div>
                 </div>
@@ -3631,7 +4862,7 @@ const CartPage = ({
                         "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                         validationErrors.name ? "border-red-500 bg-red-50" : "border-gray-200"
                       )}
-                      value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})}
+                      value={customer.name} onChange={e => handleInputChange('name', e.target.value)}
                     />
                     {validationErrors.name && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.name}</p>}
                   </div>
@@ -3643,7 +4874,7 @@ const CartPage = ({
                         "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                         validationErrors.email ? "border-red-500 bg-red-50" : "border-gray-200"
                       )}
-                      value={customer.email} onChange={e => setCustomer({...customer, email: e.target.value})}
+                      value={customer.email} onChange={e => handleInputChange('email', e.target.value)}
                     />
                     {validationErrors.email && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.email}</p>}
                   </div>
@@ -3655,7 +4886,7 @@ const CartPage = ({
                         "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                         validationErrors.phone ? "border-red-500 bg-red-50" : "border-gray-200"
                       )}
-                      value={customer.phone} onChange={e => setCustomer({...customer, phone: e.target.value})}
+                      value={customer.phone} onChange={e => handleInputChange('phone', e.target.value)}
                     />
                     {validationErrors.phone && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.phone}</p>}
                   </div>
@@ -3703,11 +4934,11 @@ const CartPage = ({
                       "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                       validationErrors.address ? "border-red-500 bg-red-50" : "border-gray-200"
                     )}
-                    value={customer.address} onChange={e => setCustomer({...customer, address: e.target.value})}
+                    value={customer.address} onChange={e => handleInputChange('address', e.target.value)}
                   />
                   {validationErrors.address && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.address}</p>}
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                   <div id="field-city">
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-2">City</label>
                     <input 
@@ -3716,7 +4947,7 @@ const CartPage = ({
                         "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                         validationErrors.city ? "border-red-500 bg-red-50" : "border-gray-200"
                       )}
-                      value={customer.city} onChange={e => setCustomer({...customer, city: e.target.value})}
+                      value={customer.city} onChange={e => handleInputChange('city', e.target.value)}
                     />
                     {validationErrors.city && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.city}</p>}
                   </div>
@@ -3728,7 +4959,7 @@ const CartPage = ({
                         "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                         validationErrors.country ? "border-red-500 bg-red-50" : "border-gray-200"
                       )}
-                      value={customer.country} onChange={e => setCustomer({...customer, country: e.target.value})}
+                      value={customer.country} onChange={e => handleInputChange('country', e.target.value)}
                     />
                     {validationErrors.country && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.country}</p>}
                   </div>
@@ -3740,7 +4971,7 @@ const CartPage = ({
                         "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
                         validationErrors.zip ? "border-red-500 bg-red-50" : "border-gray-200"
                       )}
-                      value={customer.zip} onChange={e => setCustomer({...customer, zip: e.target.value})}
+                      value={customer.zip} onChange={e => handleInputChange('zip', e.target.value)}
                     />
                     {validationErrors.zip && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.zip}</p>}
                   </div>
@@ -3751,16 +4982,16 @@ const CartPage = ({
         </div>
 
         <div className="lg:col-span-1">
-          <div className="bg-gray-50 rounded-3xl p-8 sticky top-24">
+          <div className="bg-gray-50 rounded-3xl p-6 sm:p-8 sticky top-24">
             <h2 className="text-xl font-bold mb-6">Order Summary</h2>
             <div className="space-y-4 mb-8">
               <div className="flex justify-between text-gray-500">
-                <span>Subtotal</span>
-                <span>{formatPrice(totalUSD, currency, rates, 'USD')}</span>
+                <span className="text-sm">Subtotal</span>
+                <span className="text-sm font-bold">{formatPrice(totalUSD, currency, rates, 'USD')}</span>
               </div>
               <div className="flex justify-between text-gray-500">
-                <span>Shipping</span>
-                <span className="text-green-600 font-medium">Free</span>
+                <span className="text-sm">Shipping</span>
+                <span className="text-sm text-green-600 font-bold">Free</span>
               </div>
               <div className="pt-4 border-t border-gray-200 flex justify-between text-xl font-bold text-gray-900">
                 <span>Total</span>
@@ -3878,10 +5109,69 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSeller, setIsSeller] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [currency, setCurrency] = useState('TZS');
-  const [rates, setRates] = useState<ExchangeRates>({ USD: 1 });
+  const [currency, setCurrency] = useState(() => localStorage.getItem('preferred_currency') || 'TZS');
+  const [rates, setRates] = useState<ExchangeRates>({ USD: 1, TZS: 2500 });
+
+  useEffect(() => {
+    localStorage.setItem('preferred_currency', currency);
+  }, [currency]);
+
+  useEffect(() => {
+    const ratesRef = doc(db, 'settings', 'exchangeRates');
+    const unsubscribeRates = onSnapshot(ratesRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setRates(data.rates);
+        
+        // If rates are older than 24 hours, update them
+        const lastUpdated = new Date(data.updatedAt).getTime();
+        const now = new Date().getTime();
+        if (now - lastUpdated > 24 * 60 * 60 * 1000) {
+          updateExchangeRates();
+        }
+      } else {
+        // Initial setup if document doesn't exist
+        updateExchangeRates();
+      }
+    }, (error) => {
+      console.error("Error listening to exchange rates:", error);
+      // If we can't listen, try to fetch once
+      updateExchangeRates();
+    });
+
+    return () => unsubscribeRates();
+  }, []);
+
+  const updateExchangeRates = async () => {
+    try {
+      const res = await fetch('https://open.er-api.com/v6/latest/USD');
+      const data = await res.json();
+      if (data.result === 'success') {
+        const newRates = data.rates;
+        // Only try to update Firestore if we have a user (to avoid permission errors if not logged in, 
+        // though settings might be public read/write for now or admin only)
+        try {
+          await setDoc(doc(db, 'settings', 'exchangeRates'), {
+            base: 'USD',
+            rates: newRates,
+            updatedAt: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn("Could not save rates to Firestore (likely permissions):", e);
+        }
+        setRates(newRates);
+      }
+    } catch (error) {
+      console.error("Failed to fetch live exchange rates:", error);
+      // Fallback rates if API fails and no Firestore data
+      if (Object.keys(rates).length <= 1) {
+        setRates({ USD: 1, TZS: 2500, KES: 150, UGX: 3800, EUR: 0.92, GBP: 0.79 });
+      }
+    }
+  };
 
   useEffect(() => {
     let unsubscribeUserDoc = () => {};
@@ -3894,22 +5184,27 @@ export default function App() {
         // Check if user is the hardcoded admin
         if (u.email === "mr.dummy3719@gmail.com") {
           setIsAdmin(true);
+          setIsSeller(true);
         } else {
           // Listen to user document for role changes (e.g., after registration)
           unsubscribeUserDoc = onSnapshot(doc(db, 'users', u.uid), (docSnap) => {
             if (docSnap.exists()) {
               const userData = docSnap.data();
-              setIsAdmin(userData.role === 'seller');
+              setIsAdmin(userData.role === 'admin');
+              setIsSeller(userData.role === 'seller' || userData.role === 'admin');
             } else {
               setIsAdmin(false);
+              setIsSeller(false);
             }
           }, (error) => {
             console.error("Error listening to user role:", error);
             setIsAdmin(false);
+            setIsSeller(false);
           });
         }
       } else {
         setIsAdmin(false);
+        setIsSeller(false);
         unsubscribeUserDoc();
       }
     });
@@ -3932,7 +5227,7 @@ export default function App() {
     });
 
     let unsubscribeOrders = () => {};
-    if (isAdmin) {
+    if (isSeller || isAdmin) {
       const ordersRef = collection(db, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
       unsubscribeOrders = onSnapshot(q, (snapshot) => {
@@ -4047,8 +5342,9 @@ export default function App() {
       <Router>
         <div className="min-h-screen bg-white font-sans text-gray-900">
           <Navbar 
-            cartCount={cart.reduce((s, i) => s + i.quantity, 0)} 
+            cart={cart} 
             isAdmin={isAdmin} 
+            isSeller={isSeller}
             currency={currency}
             setCurrency={setCurrency}
             rates={rates}
@@ -4067,18 +5363,49 @@ export default function App() {
                 />
               } />
               <Route path="/admin" element={
-                <AdminPanel 
-                  products={products} 
-                  addProduct={addProduct}
-                  updateProduct={updateProduct}
-                  deleteProduct={deleteProduct}
-                  orders={orders} 
-                  updateOrder={updateOrder}
-                  currency={currency} 
-                  rates={rates} 
-                  user={user}
-                  isAdmin={isAdmin}
-                />
+                isAdmin ? (
+                  <AdminPanel 
+                    products={products} 
+                    addProduct={addProduct}
+                    updateProduct={updateProduct}
+                    deleteProduct={deleteProduct}
+                    orders={orders} 
+                    updateOrder={updateOrder}
+                    currency={currency} 
+                    rates={rates} 
+                    user={user}
+                    isAdmin={isAdmin}
+                  />
+                ) : (
+                  <div className="min-h-[60vh] flex items-center justify-center">
+                    <div className="text-center">
+                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h2 className="text-xl font-bold mb-2">Access Denied</h2>
+                      <p className="text-gray-500 mb-6">You must be an administrator to access the Merchant Portal.</p>
+                      <Link to="/" className="text-indigo-600 font-bold">Return to Store</Link>
+                    </div>
+                  </div>
+                )
+              } />
+              <Route path="/seller" element={
+                isSeller ? (
+                  <SellerDashboard 
+                    user={user}
+                    products={products}
+                    orders={orders}
+                    currency={currency}
+                    rates={rates}
+                  />
+                ) : (
+                  <div className="min-h-[60vh] flex items-center justify-center">
+                    <div className="text-center">
+                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h2 className="text-xl font-bold mb-2">Access Denied</h2>
+                      <p className="text-gray-500 mb-6">You must be a registered seller to access the Seller Dashboard.</p>
+                      <Link to="/" className="text-indigo-600 font-bold">Return to Store</Link>
+                    </div>
+                  </div>
+                )
               } />
               <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} user={user} />} />
             </Routes>
@@ -4092,7 +5419,7 @@ export default function App() {
                 <div className="text-center md:text-left">
                   <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
                     <Package className="w-6 h-6 text-indigo-600" />
-                    <span className="font-bold tracking-tight text-xl">MAC8 Marketplace</span>
+                    <span className="font-bold tracking-tight text-xl">Dropship Pro Alpha</span>
                   </div>
                   <p className="text-sm text-gray-500 leading-relaxed mb-6">
                     The best deals in Dar es Salaam. Fast delivery, and quality products.
@@ -4117,7 +5444,7 @@ export default function App() {
                 </div>
               </div>
               <div className="pt-12 border-t border-gray-50 text-center">
-                <p className="text-xs text-gray-400">© 2026 MAC8 Marketplace. All rights reserved.</p>
+                <p className="text-xs text-gray-400">© 2026 Dropship Pro Alpha. All rights reserved.</p>
               </div>
             </div>
           </footer>

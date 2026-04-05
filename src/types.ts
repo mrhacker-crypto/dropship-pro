@@ -8,6 +8,15 @@ export interface Variation {
   options: VariationOption[];
 }
 
+export interface Review {
+  id: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -17,7 +26,7 @@ export interface Product {
   sourceCurrency: string;
   image: string;
   gallery?: string[];
-  sourceUrl: string;
+  sourceUrl?: string;
   markup: number;
   shippingCost?: number;
   status: 'pending' | 'approved';
@@ -25,6 +34,10 @@ export interface Product {
   verificationLogs?: string[];
   shippingInfo?: string;
   category: string;
+  sellerId?: string;
+  sellerName?: string;
+  type: 'dropship' | 'manual';
+  createdAt?: string;
 }
 
 export interface CustomerInfo {
@@ -35,6 +48,7 @@ export interface CustomerInfo {
   city: string;
   country: string;
   zip: string;
+  referredBy?: string;
 }
 
 export interface Order {
@@ -51,6 +65,8 @@ export interface Order {
   status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled';
   automationStatus?: 'idle' | 'processing' | 'completed' | 'failed';
   automationLog?: string[];
+  referralCommission?: number;
+  ownerProfit?: number;
   createdAt: string;
   stripeSessionId?: string;
 }
