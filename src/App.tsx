@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import React, { useState, useEffect, Component, useCallback, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -1011,7 +1011,7 @@ const AuthModal = ({
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl p-8"
+        className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl p-6 sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-8">
@@ -1421,7 +1421,7 @@ const ProductForm = ({
 
             <div>
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Product Gallery</label>
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {(formData.gallery || []).map((img, index) => (
                   <div key={index} className="aspect-square rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden relative group">
                     <img src={img} alt={`Gallery image ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -2159,9 +2159,12 @@ const AdminChat = ({ user }: { user: User | null }) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex h-[600px]">
+    <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex h-[600px] relative">
       {/* Chat List */}
-      <div className="w-1/3 border-r border-gray-100 flex flex-col">
+      <div className={cn(
+        "w-full md:w-1/3 border-r border-gray-100 flex flex-col bg-white z-10",
+        selectedChat ? "hidden md:flex" : "flex"
+      )}>
         <div className="p-4 border-b border-gray-100 bg-gray-50/50">
           <h3 className="font-bold text-gray-900">Conversations</h3>
           <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Recent Messages</p>
@@ -2205,11 +2208,20 @@ const AdminChat = ({ user }: { user: User | null }) => {
       </div>
 
       {/* Chat Window */}
-      <div className="flex-1 flex flex-col bg-gray-50/30">
+      <div className={cn(
+        "flex-1 flex flex-col bg-gray-50/30",
+        !selectedChat ? "hidden md:flex" : "flex"
+      )}>
         {selectedChat ? (
           <>
             <div className="p-4 bg-white border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setSelectedChat(null)}
+                  className="md:hidden p-2 -ml-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
                   {(selectedChat.buyerName?.[0] || '?').toUpperCase()}
                 </div>
@@ -3067,12 +3079,12 @@ const AdminPanel = ({
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-12">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-5xl mx-auto px-4 py-6 sm:py-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Admin Dashboard</h1>
           <div className="flex items-center gap-4 mt-1">
-            <p className="text-gray-500">Manage your dropshipping empire.</p>
+            <p className="text-sm text-gray-500">Manage your dropshipping empire.</p>
             <button 
               onClick={() => setShowConfirmClear(true)}
               className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-widest flex items-center gap-1 transition-colors"
@@ -3082,7 +3094,7 @@ const AdminPanel = ({
             </button>
           </div>
         </div>
-        <div className="flex bg-gray-100 p-1 rounded-xl">
+        <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0 shrink-0">
           <button 
             onClick={() => setTab('overview')}
             className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", tab === 'overview' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
@@ -3460,7 +3472,7 @@ const AdminPanel = ({
                   <img src="https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Alibaba.com_logo.svg/1200px-Alibaba.com_logo.svg.png" alt="Alibaba" className="h-4 object-contain opacity-80" referrerPolicy="no-referrer" />
                   <span className="text-[10px] font-bold text-orange-700 uppercase tracking-tighter">Ready</span>
                 </div>
-                <div className="flex bg-gray-100 p-1 rounded-xl">
+                <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto scrollbar-hide">
                   <button 
                     onClick={() => setIsBulk(false)}
                     className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", !isBulk ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
@@ -3695,23 +3707,27 @@ const AdminPanel = ({
             </div>
             {products.filter(p => p.status === 'approved').map(p => (
               <div key={p.id} className="bg-white p-4 rounded-xl border border-gray-100 hover:border-indigo-200 transition-colors">
-                <div className="flex items-center gap-4">
-                  <img src={p.image || null} className="w-16 h-16 object-cover rounded-lg" referrerPolicy="no-referrer" />
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-gray-900 truncate">{p.title}</h4>
-                    {p.variations && p.variations.length > 0 && (
-                      <p className="text-[9px] text-gray-400">
-                        {p.variations.length} options: {p.variations.map(v => v.name).join(', ')}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-4 text-sm">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <img src={p.image || null} className="w-16 h-16 object-cover rounded-lg shrink-0" referrerPolicy="no-referrer" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-gray-900 truncate">{p.title}</h4>
+                      {p.variations && p.variations.length > 0 && (
+                        <p className="text-[9px] text-gray-400">
+                          {p.variations.length} options: {p.variations.map(v => v.name).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 w-full sm:w-auto">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-400">Cost:</span>
+                        <span className="text-gray-400 text-[10px] uppercase font-bold">Cost:</span>
                         <input 
                           type="number" 
                           value={p.price} 
                           onChange={(e) => updateProduct({ ...p, price: Number(e.target.value) })}
-                          className="w-24 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
+                          className="w-20 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
                         />
                         <select 
                           value={p.sourceCurrency} 
@@ -3723,30 +3739,30 @@ const AdminPanel = ({
                         </select>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-400">Markup:</span>
+                        <span className="text-gray-400 text-[10px] uppercase font-bold">Markup:</span>
                         <input 
                           type="number" 
                           value={p.markup} 
                           onChange={(e) => updateProduct({ ...p, markup: Number(e.target.value) })}
-                          className="w-16 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
+                          className="w-14 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
                         />
                         <span className="text-gray-400">%</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-400">Ship:</span>
+                        <span className="text-gray-400 text-[10px] uppercase font-bold">Ship:</span>
                         <input 
                           type="number" 
                           value={p.shippingCost || 0} 
                           onChange={(e) => updateProduct({ ...p, shippingCost: Number(e.target.value) })}
-                          className="w-16 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
+                          className="w-14 px-2 py-1 border border-gray-200 rounded text-xs font-bold"
                         />
                       </div>
-                      <span className="text-indigo-600 font-bold ml-2">
+                      <span className="text-indigo-600 font-bold text-xs">
                         Retail: {formatPrice(p.price * (1 + p.markup / 100), currency, rates, p.sourceCurrency)}
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-50">
                     <button onClick={() => updateStatus(p.id, 'pending')} className="p-2 text-gray-400 hover:text-orange-500" title="Move to Approval">
                       <Clock className="w-5 h-5" />
                     </button>
@@ -3775,7 +3791,7 @@ const AdminPanel = ({
         >
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Product Approval Center</h2>
-            <div className="flex bg-gray-100 p-1 rounded-xl">
+            <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto scrollbar-hide">
               <button 
                 onClick={() => setApprovalSubTab('pending')}
                 className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", approvalSubTab === 'pending' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
@@ -4067,7 +4083,7 @@ const AdminPanel = ({
               No orders yet.
             </div>
           ) : (
-            <div className="overflow-hidden border border-gray-200 rounded-2xl">
+            <div className="overflow-x-auto border border-gray-200 rounded-2xl">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
