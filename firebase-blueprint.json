@@ -23,6 +23,8 @@
         "sellerId": { "type": "string" },
         "sellerName": { "type": "string" },
         "type": { "type": "string", "enum": ["dropship", "manual"] },
+        "isVirtual": { "type": "boolean" },
+        "digitalFileUrl": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["id", "title", "price", "sourceCurrency", "image", "markup", "status", "type"]
@@ -58,7 +60,9 @@
         "customer": { "$ref": "CustomerInfo" },
         "total": { "type": "number" },
         "currency": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "paid", "fulfilled", "shipped", "delivered", "cancelled"] },
+        "status": { "type": "string", "enum": ["pending", "paid", "fulfilled", "shipped", "delivered", "cancelled", "reported", "awaiting_pickup", "picked_up", "disputed", "awaiting_payment", "awaiting_confirmation", "availability_confirmed", "on_the_way"] },
+        "disputeNotes": { "type": "string" },
+        "disputePenaltyApplied": { "type": "boolean" },
         "automationStatus": { "type": "string", "enum": ["idle", "processing", "completed", "failed"] },
         "automationLog": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string" },
@@ -150,7 +154,11 @@
         "createdAt": { "type": "string" },
         "referredBy": { "type": "string" },
         "referralEarnings": { "type": "number" },
-        "walletBalance": { "type": "number" }
+        "walletBalance": { "type": "number" },
+        "membership": { "type": "object" },
+        "driverVerification": { "type": "object" },
+        "nationalId": { "type": "string" },
+        "isActive": { "type": "boolean" }
       },
       "required": ["uid", "email", "role", "createdAt"]
     },
@@ -190,6 +198,20 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["base", "rates", "updatedAt"]
+    },
+    "PoliceReport": {
+      "title": "PoliceReport",
+      "description": "An official report filed against a driver",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "driverId": { "type": "string" },
+        "orderId": { "type": "string" },
+        "summary": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "driverDigitalFile": { "type": "object" }
+      },
+      "required": ["type", "driverId", "orderId", "timestamp"]
     }
   },
   "firestore": {
@@ -228,6 +250,10 @@
     "/settings/exchangeRates": {
       "schema": "ExchangeRates",
       "description": "Global exchange rates settings"
+    },
+    "/police_reports/{reportId}": {
+      "schema": "PoliceReport",
+      "description": "Collection of official incident reports"
     }
   }
 }

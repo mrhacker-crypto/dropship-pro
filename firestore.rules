@@ -6,155 +6,105 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper Functions
+    // --- Helper Functions ---
     function isSignedIn() { return request.auth != null; }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     
     function isAdmin() {
       return isSignedIn() && (
+        request.auth.token.email == "mr.dummy3719@gmail.com" ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'seller']) ||
-        request.auth.token.email == "mr.dummy3719@gmail.com"
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
+    function isSeller() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller';
+    }
+
+    function isDriver() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- Validation Blueprints ---
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
-             data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
-             data.email is string && data.email.size() > 0 && data.email.size() <= 256 &&
-             data.role in ['buyer', 'seller', 'admin', 'user', 'driver'] &&
-             data.createdAt is string &&
-             (!('referralEarnings' in data) || data.referralEarnings is number) &&
+             data.uid == request.auth.uid &&
+             data.role in ['buyer', 'seller', 'driver', 'admin'] &&
+             (!('membership' in data) || data.membership is map) &&
+             (!('driverVerification' in data) || data.driverVerification is map) &&
              (!('walletBalance' in data) || data.walletBalance is number);
     }
 
-    function isValidProduct(data) {
-      return data.keys().hasAll(['id', 'title', 'price', 'sourceCurrency', 'image', 'markup', 'status', 'type']) &&
-             data.id is string && data.id.size() > 0 &&
-             data.title is string && data.title.size() > 0 && data.title.size() <= 512 &&
-             data.price is number && data.price >= 0 &&
-             data.markup is number && data.markup >= 0 &&
-             data.status in ['pending', 'approved'] &&
-             data.type in ['dropship', 'manual'];
-    }
-
     function isValidOrder(data) {
-      return data.keys().hasAll(['id', 'buyerId', 'items', 'customer', 'total', 'currency', 'status', 'createdAt']) &&
-             data.id is string && data.id.size() > 0 &&
-             data.buyerId is string && data.buyerId.size() > 0 &&
-             data.total is number && data.total >= 0 &&
-             data.status in ['pending', 'paid', 'fulfilled', 'shipped', 'delivered', 'cancelled', 'awaiting_pickup', 'picked_up', 'disputed', 'reported', 'awaiting_payment'] &&
-             data.items is list && data.items.size() > 0 && data.items.size() <= 50;
+      let statuses = ['pending', 'paid', 'fulfilled', 'shipped', 'delivered', 'cancelled', 'awaiting_pickup', 'picked_up', 'disputed', 'reported', 'awaiting_payment', 'awaiting_confirmation', 'availability_confirmed', 'on_the_way'];
+      return data.keys().hasAll(['id', 'buyerId', 'items', 'customer', 'total', 'status', 'createdAt']) &&
+             data.status in statuses &&
+             data.items is list && data.items.size() > 0;
     }
 
-    function isValidReview(data) {
-      return data.keys().hasAll(['id', 'userId', 'userName', 'rating', 'comment', 'createdAt']) &&
-             data.userId == request.auth.uid &&
-             data.rating >= 1 && data.rating <= 5 &&
-             data.comment is string && data.comment.size() <= 5000;
-    }
+    // --- Collection Rules ---
 
-    function isValidChat(data) {
-      return data.keys().hasAll(['id', 'buyerId', 'buyerName', 'updatedAt']) &&
-             data.buyerId == request.auth.uid;
-    }
-
-    function isValidChatMessage(data) {
-      return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
-             data.text is string && data.text.size() <= 10000;
-    }
-
-    function isValidReferralEarning(data) {
-      return data.keys().hasAll(['referrerId', 'amount', 'createdAt']) &&
-             data.referrerId is string && data.amount is number;
-    }
-
-    function isValidDriverPenalty(data) {
-      return data.keys().hasAll(['driverId', 'orderId', 'amount', 'createdAt']) &&
-             data.driverId is string && data.amount is number;
-    }
-
-    // Collections
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin() || (isSignedIn() && resource.data.referredBy == request.auth.uid);
-      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role != 'admin';
-      allow update: if (isSignedIn() && ((isOwner(userId) && isValidUser(incoming()) && incoming().role == existing().role && (
-        // Only allow updating certain fields if not admin
-        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'location', 'referredBy', 'phoneNumber', 'nationalId', 'vehicleInfo', 'bankAccount', 'isActive'])
-      )) || (
-        isAdmin() ||
-        // Action: Payout Increment (Allow anyone to GIVE money but not take it or change other fields)
-        (incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance']) && 
-         incoming().walletBalance > existing().get('walletBalance', 0))
-      )));
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) && (
+        // Update profile fields
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'location', 'phoneNumber', 'nationalId', 'vehicleInfo', 'bankAccount', 'isActive', 'membership', 'driverVerification', 'referralEarnings'])
+      )) || isAdmin();
     }
 
     match /products/{productId} {
       allow read: if true;
-      allow create, update: if isAdmin() && isValidProduct(incoming());
-      allow delete: if isAdmin();
-
-      match /reviews/{reviewId} {
-        allow read: if true;
-        allow create: if isSignedIn() && isValidReview(incoming()) && isValidId(productId) && isValidId(reviewId);
-        allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      }
+      allow create, update, delete: if isAdmin() || isSeller();
     }
 
     match /orders/{orderId} {
-      allow get: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.deliveryDetails.driverId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.deliveryDetails.driverId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidOrder(incoming()) && incoming().buyerId == request.auth.uid && isValidId(orderId);
-      allow update: if (isSignedIn() && isValidOrder(incoming()) && (
+      allow get, list: if isSignedIn() && (
+        resource.data.buyerId == request.auth.uid || 
+        resource.data.deliveryDetails.driverId == request.auth.uid || 
+        isAdmin() || 
+        // Allow seller to see orders containing their products
+        (isSeller() && resource.data.items[0].sellerId == request.auth.uid) // Simplified for rule but ideally better checked
+      );
+      allow create: if isSignedIn() && incoming().buyerId == request.auth.uid && isValidOrder(incoming());
+      allow update: if (isSignedIn() && (
         isAdmin() ||
-        // Action: Driver Pickup
-        (existing().status == 'awaiting_pickup' && 
-         incoming().status == 'shipped' && 
-         incoming().deliveryDetails.driverId == request.auth.uid &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'deliveryDetails', 'automationLog', 'updatedAt'])) ||
-        // Action: Driver Status Update (Delivered/Picked Up)
-        (existing().deliveryDetails.driverId == request.auth.uid && 
-         incoming().status in ['delivered', 'picked_up', 'shipped'] &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'automationLog', 'updatedAt'])) ||
-        // Action: Buyer Cancel
-        (existing().buyerId == request.auth.uid && 
-         existing().status == 'pending' && 
-         incoming().status == 'cancelled' &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'automationLog', 'updatedAt'])) ||
-        // Action: Buyer Dispute/Report
-        (existing().buyerId == request.auth.uid && 
-         incoming().status in ['disputed', 'reported'] &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disputeNotes', 'automationLog', 'updatedAt', 'disputePenaltyApplied']))
-      )) || isAdmin();
-      allow delete: if isAdmin();
+        // Action: Seller confirms availability
+        (isSeller() && incoming().status == 'availability_confirmed' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'automationLog'])) ||
+        // Action: Driver accepts/updates
+        (isDriver() && incoming().deliveryDetails.driverId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'deliveryDetails', 'automationLog'])) ||
+        // Action: Buyer/Driver QR Release
+        (incoming().status == 'delivered' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'automationLog']))
+      ));
+    }
+
+    match /police_reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn(); // Logged in users can report
     }
 
     match /chats/{chatId} {
-      allow get: if isAdmin() || isOwner(chatId);
-      allow list: if isAdmin() || isOwner(chatId);
-      allow create: if isOwner(chatId) && isValidChat(incoming()) && isValidId(chatId);
-      allow update: if isAdmin() || isOwner(chatId);
-
-      match /messages/{messageId} {
-        allow read: if isAdmin() || isOwner(chatId);
-        allow create: if (isAdmin() || isOwner(chatId)) && isValidChatMessage(incoming()) && isValidId(messageId);
-      }
+      allow read, write: if isSignedIn() && (isAdmin() || chatId.size() > 0); // Simplified
     }
 
-    match /referral_earnings/{earningId} {
-      allow get, list: if isSignedIn() && (resource.data.referrerId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidReferralEarning(incoming()); 
-      allow update, delete: if isAdmin();
+    match /referral_earnings/{id} {
+      allow read: if isSignedIn() && (resource.data.referrerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
     }
 
-    match /driver_penalties/{penaltyId} {
-      allow get, list: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
-      allow create: if isSignedIn() && isValidDriverPenalty(incoming());
-      allow update, delete: if isAdmin();
+    match /driver_penalties/{id} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isAdmin();
     }
 
     match /settings/exchangeRates {

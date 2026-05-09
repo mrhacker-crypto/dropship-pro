@@ -1,4 +1,4 @@
-# Security Specification - DigiPesa Marketplace
+# Security Specification - DropShip Pro Alpha Marketplace
 
 ## Data Invariants
 1. A **User** document must exist for every authenticated user and match their `uid`.

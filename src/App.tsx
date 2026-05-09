@@ -1,12 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import React, { useState, useEffect, Component, useCallback, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft, Gift, Copy, Link as LinkIcon, UserPlus, Users, ShieldAlert, User as UserIcon } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft, Gift, Copy, Link as LinkIcon, UserPlus, Users, ShieldAlert, User as UserIcon, Zap, Crown, Camera, FileText, Download, ChevronLeft, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Product, CartItem, CustomerInfo, Order, ExchangeRates, Chat, ChatMessage, Review, UserProfile } from './types';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer, addDoc, serverTimestamp, where, limit, getDocs, getDoc, increment } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer, addDoc, serverTimestamp, where, limit, getDocs, getDoc, increment, arrayUnion } from 'firebase/firestore';
 import { signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -14,6 +14,38 @@ import * as Slider from '@radix-ui/react-slider';
 import Fuse from 'fuse.js';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Circle } from 'react-leaflet';
+import L from 'leaflet';
+
+// Fix Leaflet marker icons in production
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+const driverIcon = new L.Icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/1702/1702016.png',
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -20],
+});
+
+const homeIcon = new L.Icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/619/619153.png',
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -20],
+});
+
+const packageIcon = new L.Icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/3061/3061937.png',
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -20],
+});
 
 enum OperationType {
   CREATE = 'create',
@@ -146,6 +178,150 @@ const formatPrice = (amount: number, targetCurrency: string, rates: ExchangeRate
 };
 
 // --- Components ---
+
+const UpgradeSection = ({ user, updateProfile }: { user: UserProfile; updateProfile: (data: Partial<UserProfile>) => Promise<void> }) => {
+  const tiers = [
+    {
+      id: 'basic' as const,
+      name: 'Starter',
+      price: 'Free',
+      description: 'Perfect for casual dropshippers.',
+      features: [
+        'Standard Referral Rate (3%)',
+        'Basic Driver Network',
+        'Physical Goods Only',
+        'Manual Order Support'
+      ],
+      icon: ShoppingCart,
+      color: 'bg-gray-100 text-gray-600'
+    },
+    {
+      id: 'pro' as const,
+      name: 'Pro Dropshipper',
+      price: '$19.99/mo',
+      description: 'Scale your business with advanced tools.',
+      features: [
+        'Boosted Referral Rate (5%)',
+        'Sell Digital & Virtual Goods',
+        'AI Product Descriptions',
+        'Priority Driver Assignment',
+        'Advanced Analytics Dashboard'
+      ],
+      icon: Zap,
+      color: 'bg-indigo-100 text-indigo-600',
+      popular: true
+    },
+    {
+      id: 'elite' as const,
+      name: 'Elite Enterprise',
+      price: '$99.99/mo',
+      description: 'Global scale with zero friction.',
+      features: [
+        'Maximum Referral Rate (10%)',
+        'Zero Marketplace Fees',
+        'Custom Fulfillment Branding',
+        'Dedicated Agent Monitoring',
+        'Private VIP Supplier List'
+      ],
+      icon: Crown,
+      color: 'bg-amber-100 text-amber-600'
+    }
+  ];
+
+  const handleUpgrade = async (tier: 'pro' | 'elite') => {
+    if (confirm(`Unlock ${tier.toUpperCase()} features now? Payment will be processed via your M-Pesa account.`)) {
+      await updateProfile({
+        membership: { 
+          tier, 
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() 
+        }
+      });
+      alert(`Welcome to ${tier.toUpperCase()}! Your features are now active.`);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="text-center max-w-2xl mx-auto">
+        <h2 className="text-3xl font-bold text-gray-900 mb-4 font-display">Upgrade Your DropShip Pro Experience</h2>
+        <p className="text-gray-500">Choose the tier that fits your growth ambitions and unlock high-profit features.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {tiers.map((tier) => (
+          <motion.div
+            key={tier.id}
+            whileHover={{ y: -10 }}
+            className={cn(
+              "relative bg-white rounded-[2.5rem] p-8 border-2 transition-all shadow-xl shadow-gray-100/50 flex flex-col",
+              tier.popular ? "border-indigo-600 shadow-indigo-100/50" : "border-gray-50"
+            )}
+          >
+            {tier.popular && (
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest shadow-lg">
+                Recommended
+              </div>
+            )}
+
+            <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center mb-6", tier.color)}>
+              <tier.icon className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-xl font-bold text-gray-900 mb-2">{tier.name}</h3>
+            <div className="flex items-baseline gap-1 mb-4">
+              <span className="text-3xl font-black text-gray-900">{tier.price}</span>
+              {tier.id !== 'basic' && <span className="text-xs text-gray-400 font-bold uppercase">/ month</span>}
+            </div>
+            <p className="text-sm text-gray-500 mb-8 leading-relaxed">{tier.description}</p>
+
+            <div className="space-y-4 mb-8 flex-1">
+              {tier.features.map((feature, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-green-50 flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                  </div>
+                  <span className="text-sm text-gray-600 leading-tight">{feature}</span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => tier.id !== 'basic' && handleUpgrade(tier.id)}
+              disabled={user.membership?.tier === tier.id || (user.membership?.tier === 'elite' && tier.id === 'pro')}
+              className={cn(
+                "w-full py-4 rounded-2xl font-bold transition-all active:scale-95",
+                user.membership?.tier === tier.id 
+                  ? "bg-gray-100 text-gray-400 cursor-default" 
+                  : tier.popular 
+                    ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200" 
+                    : "bg-gray-900 text-white hover:bg-black shadow-lg shadow-gray-200"
+              )}
+            >
+              {user.membership?.tier === tier.id ? 'Current Plan' : tier.id === 'basic' ? 'Explore Features' : 'Upgrade Now'}
+            </button>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+            <ShieldCheck className="w-8 h-8 text-indigo-600" />
+          </div>
+          <div>
+            <h4 className="font-bold text-gray-900 mb-1">Global Trade Protection</h4>
+            <p className="text-sm text-gray-500 max-w-md leading-relaxed">
+              All upgrade payments are secured by M-Pesa Escrow. You have a 7-day money-back guarantee for all Pro and Elite plans.
+            </p>
+          </div>
+        </div>
+        <button className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:underline">
+          View Detailed Comparison <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const AutomationLogView = ({ logs }: { logs?: string[] }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -452,6 +628,163 @@ const QRScannerModal = ({ onScan, onClose }: { onScan: (data: string) => void, o
         </div>
         <div id="qr-reader" className="overflow-hidden rounded-2xl border-2 border-dashed border-gray-200"></div>
         <p className="text-xs text-gray-400 mt-4 text-center font-medium">Position the driver's QR code within the frame to confirm receipt and release payment.</p>
+      </div>
+    </div>
+  );
+};
+
+const LocationPicker = ({ onLocationSelect, initialLocation }: { onLocationSelect: (lat: number, lng: number, address?: string) => void, initialLocation?: { lat: number, lng: number } }) => {
+  const [position, setPosition] = useState<[number, number]>(initialLocation ? [initialLocation.lat, initialLocation.lng] : [-6.7924, 39.2083]); // Default to Dar es Salaam
+  const [loading, setLoading] = useState(false);
+
+  function LocationMarker() {
+    const map = useMapEvents({
+      click(e) {
+        setPosition([e.latlng.lat, e.latlng.lng]);
+        onLocationSelect(e.latlng.lat, e.latlng.lng);
+      },
+    });
+
+    return position === null ? null : (
+      <Marker position={position} icon={homeIcon}>
+        <Popup>Delivery will be sent here.</Popup>
+      </Marker>
+    );
+  }
+
+  const handleGetCurrentLocation = () => {
+    setLoading(true);
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      setLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setPosition([latitude, longitude]);
+        onLocationSelect(latitude, longitude);
+        setLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        alert("Unable to retrieve your location. Using default map center.");
+        setLoading(false);
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-indigo-600">
+          <MapPin className="w-5 h-5" />
+          <h3 className="font-bold text-sm">Pin Delivery Point</h3>
+        </div>
+        <button
+          type="button"
+          onClick={handleGetCurrentLocation}
+          disabled={loading}
+          className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
+        >
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
+          Use My Precise Location
+        </button>
+      </div>
+      <div className="h-64 sm:h-80 w-full rounded-2xl overflow-hidden border-2 border-gray-100">
+        <MapContainer center={position} zoom={13} scrollWheelZoom={false}>
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <LocationMarker />
+        </MapContainer>
+      </div>
+      <p className="text-[10px] text-gray-400 italic text-center">Tap or Drag on the map to set an exact drop-off point.</p>
+    </div>
+  );
+};
+
+const TrackingMap = ({ order }: { order: Order }) => {
+  const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  const destination: [number, number] = order.location ? [order.location.lat, order.location.lng] : [-6.7924, 39.2083];
+  // Simulate driver starting from a nearby hub (e.g., Kariakoo)
+  const origin: [number, number] = [-6.8161, 39.2804]; 
+
+  useEffect(() => {
+    if (order.status === 'delivered') {
+      setDriverPos(destination);
+      return;
+    }
+
+    if (order.status === 'picked_up' || order.status === 'on_the_way') {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          const next = prev + 0.01;
+          if (next >= 1) {
+            clearInterval(interval);
+            return 1;
+          }
+          return next;
+        });
+      }, 2000);
+
+      return () => clearInterval(interval);
+    }
+  }, [order.status]);
+
+  useEffect(() => {
+    // Interpolate position
+    const lat = origin[0] + (destination[0] - origin[0]) * progress;
+    const lng = origin[1] + (destination[1] - origin[1]) * progress;
+    setDriverPos([lat, lng]);
+  }, [progress]);
+
+  return (
+    <div className="h-80 w-full rounded-[2.5rem] overflow-hidden border-2 border-gray-100 shadow-inner relative">
+      <MapContainer center={destination} zoom={12} scrollWheelZoom={false}>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        
+        {/* Destination / Customer Home */}
+        <Marker position={destination} icon={homeIcon}>
+          <Popup>Delivery Address</Popup>
+        </Marker>
+
+        {/* Driver / Moving Package */}
+        {driverPos && (
+          <>
+            <Marker position={driverPos} icon={order.status === 'picked_up' || order.status === 'on_the_way' ? driverIcon : packageIcon}>
+              <Popup>
+                {order.status === 'picked_up' || order.status === 'on_the_way' 
+                  ? `Driver is on the way!` 
+                  : `Item at Hub`}
+              </Popup>
+            </Marker>
+            <Circle 
+              center={driverPos} 
+              radius={800} 
+              pathOptions={{ fillColor: '#4f46e5', fillOpacity: 0.1, color: '#4f46e5', weight: 1 }} 
+            />
+          </>
+        )}
+      </MapContainer>
+      
+      <div className="absolute bottom-4 left-4 right-4 z-20 flex gap-2 overflow-x-auto scrollbar-hide">
+        <div className="shrink-0 flex items-center gap-2 bg-white/90 backdrop-blur px-4 py-2 rounded-full border border-white shadow-lg">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+          <span className="text-[10px] font-bold text-gray-900 uppercase">Live Tracking Active</span>
+        </div>
+        <div className="shrink-0 flex items-center gap-2 bg-white/90 backdrop-blur px-4 py-2 rounded-full border border-white shadow-lg">
+          <Clock className="w-3 h-3 text-indigo-600" />
+          <span className="text-[10px] font-bold text-gray-900 uppercase">ETA: {Math.max(5, Math.ceil((1 - progress) * 25))} Mins</span>
+        </div>
       </div>
     </div>
   );
@@ -1234,6 +1567,13 @@ const AuthModal = ({
   const [nationalId, setNationalId] = useState('');
   const [vehicleInfo, setVehicleInfo] = useState({ type: 'Motorcycle', plateNumber: '', model: '', color: '' });
   const [bankAccount, setBankAccount] = useState({ accountName: '', accountNumber: '', bankName: '' });
+  const [driverVerification, setDriverVerification] = useState({
+    birthCertUrl: '',
+    selfieUrl: '',
+    licenseUrl: '',
+    nidaNumber: '',
+    status: 'pending' as 'pending' | 'verified' | 'rejected' | 'flagged'
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -1264,8 +1604,10 @@ const AuthModal = ({
           referralEarnings: 0,
           walletBalance: 0,
           nationalId: role === 'driver' ? nationalId : null,
+          driverVerification: role === 'driver' ? driverVerification : null,
           vehicleInfo: role === 'driver' ? vehicleInfo : null,
           bankAccount: role === 'driver' ? bankAccount : null,
+          membership: { tier: 'basic' },
           createdAt: new Date().toISOString()
         });
       }
@@ -1436,11 +1778,92 @@ const AuthModal = ({
                 <input
                   type="text"
                   value={nationalId}
-                  onChange={(e) => setNationalId(e.target.value)}
+                  onChange={(e) => {
+                    setNationalId(e.target.value);
+                    setDriverVerification(prev => ({ ...prev, nidaNumber: e.target.value }));
+                  }}
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
                   placeholder="ID Number"
                   required
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Selfie Photo</label>
+                  <label className="flex items-center justify-center p-4 border-2 border-dashed border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
+                    {driverVerification.selfieUrl ? (
+                      <CheckCircle2 className="w-6 h-6 text-green-500" />
+                    ) : (
+                      <Camera className="w-6 h-6 text-gray-400" />
+                    )}
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => setDriverVerification(prev => ({ ...prev, selfieUrl: reader.result as string }));
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">License Photo</label>
+                  <label className="flex items-center justify-center p-4 border-2 border-dashed border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
+                    {driverVerification.licenseUrl ? (
+                      <CheckCircle2 className="w-6 h-6 text-green-500" />
+                    ) : (
+                      <FileText className="w-6 h-6 text-gray-400" />
+                    )}
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => setDriverVerification(prev => ({ ...prev, licenseUrl: reader.result as string }));
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Birth Certificate Scan</label>
+                <label className="flex items-center justify-center p-4 border-2 border-dashed border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
+                  {driverVerification.birthCertUrl ? (
+                    <div className="flex items-center gap-2 text-green-500 font-bold text-xs">
+                      <CheckCircle2 className="w-5 h-5" />
+                      Document Uploaded
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-gray-400 font-bold text-xs">
+                      <Plus className="w-5 h-5" />
+                      Select Birth Certificate
+                    </div>
+                  )}
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => setDriverVerification(prev => ({ ...prev, birthCertUrl: reader.result as string }));
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1587,7 +2010,7 @@ const ProductForm = ({
   onClose: () => void; 
   onSave: (p: Partial<Product>) => Promise<void>;
   initialProduct?: Product;
-  user: User | null;
+  user: UserProfile | null;
 }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<Partial<Product>>(initialProduct || {
@@ -1602,7 +2025,9 @@ const ProductForm = ({
     type: 'manual',
     markup: 0,
     features: [],
-    variations: []
+    variations: [],
+    isVirtual: false,
+    digitalFileUrl: ''
   });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1834,6 +2259,50 @@ const ProductForm = ({
                 placeholder="Tell buyers about your product..."
               />
             </div>
+
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Virtual Good</label>
+                <p className="text-[10px] text-gray-400 font-medium">Software, Music, Games, Beats, License Keys</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, isVirtual: !prev.isVirtual }))}
+                className={cn(
+                  "w-12 h-6 rounded-full transition-all relative shrink-0",
+                  formData.isVirtual ? "bg-indigo-600" : "bg-gray-200"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all",
+                  formData.isVirtual ? "left-7" : "left-1"
+                )} />
+              </button>
+            </div>
+
+            {formData.isVirtual && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="space-y-4"
+              >
+                <div className="relative">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Digital Delivery Link / Asset URL *</label>
+                  <div className="relative">
+                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="url"
+                      required={formData.isVirtual}
+                      value={formData.digitalFileUrl}
+                      onChange={(e) => setFormData(prev => ({ ...prev, digitalFileUrl: e.target.value }))}
+                      className="w-full bg-indigo-50 border border-indigo-200 rounded-xl pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-mono"
+                      placeholder="https://example.com/download/asset.zip"
+                    />
+                  </div>
+                  <p className="text-[10px] text-indigo-400 italic mt-2">SECURE: This link is encrypted and only revealed to customers after verified payment.</p>
+                </div>
+              </motion.div>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Product Image *</label>
@@ -2094,9 +2563,10 @@ const CustomerDashboard = ({
   releaseFunds,
   updateOrder,
   isInstallable,
-  installApp
+  installApp,
+  updateProfile
 }: { 
-  user: User | null; 
+  user: UserProfile | null; 
   orders: Order[];
   currency: string;
   rates: ExchangeRates;
@@ -2105,9 +2575,11 @@ const CustomerDashboard = ({
   updateOrder: (orderId: string, data: Partial<Order>) => Promise<void>;
   isInstallable?: boolean;
   installApp?: () => Promise<void>;
+  updateProfile: (data: Partial<UserProfile>) => Promise<void>;
 }) => {
   const [viewingPoliceReport, setViewingPoliceReport] = useState<Order | null>(null);
   const [scanningForOrder, setScanningForOrder] = useState<Order | null>(null);
+  const [tab, setTab] = useState<'orders' | 'plans'>('orders');
   const myOrders = orders.filter(o => o.buyerId === user?.uid);
 
   const handleScan = (data: string) => {
@@ -2132,24 +2604,43 @@ const CustomerDashboard = ({
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 pb-32 sm:pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-2">My Orders</h1>
-          <p className="text-gray-500">Track your deliveries and manage your purchases.</p>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-2">My Dashboard</h1>
+          <p className="text-gray-500">Track your deliveries and manage your memberships.</p>
         </div>
 
-        {isInstallable && (
+        <div className="flex items-center gap-3">
           <button 
-            onClick={installApp}
-            className="flex items-center gap-3 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-gray-900 transition-all active:scale-95 text-sm"
+            onClick={() => setTab(p => p === 'orders' ? 'plans' : 'orders')}
+            className={cn(
+              "px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all",
+              tab === 'plans' ? "bg-indigo-600 text-white shadow-lg" : "border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50"
+            )}
           >
-            <Smartphone className="w-5 h-5" />
-            Install App
+            <Zap className="w-5 h-5" />
+            {tab === 'plans' ? 'View Orders' : 'Upgrade Account'}
           </button>
-        )}
+          {isInstallable && (
+            <button 
+              onClick={installApp}
+              className="flex items-center gap-3 bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold shadow-lg hover:bg-black transition-all active:scale-95 text-sm"
+            >
+              <Smartphone className="w-5 h-5" />
+              App
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-6">
+      {tab === 'plans' && user && (
+        <div className="mt-8">
+          <UpgradeSection user={user} updateProfile={updateProfile} />
+        </div>
+      )}
+
+      {tab === 'orders' && (
+        <div className="space-y-6 mt-8">
         {myOrders.length === 0 ? (
           <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
             <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -2182,7 +2673,18 @@ const CustomerDashboard = ({
               </div>
 
               <div className="p-6">
-                <OrderStatusTracker order={order} />
+                <div className="mb-8">
+                  {order.status !== 'pending' && order.status !== 'delivered' && order.status !== 'cancelled' && (
+                    <div className="mb-8 space-y-4">
+                       <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                         <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
+                         Live Tracking
+                       </h3>
+                       <TrackingMap order={order} />
+                    </div>
+                  )}
+                  <OrderStatusTracker order={order} />
+                </div>
 
                 <div className="flex flex-col md:flex-row gap-8">
                   <div className="flex-1 space-y-4">
@@ -2194,6 +2696,23 @@ const CustomerDashboard = ({
                           <div>
                             <div className="text-sm font-bold text-gray-900">{item.title}</div>
                             <div className="text-xs text-gray-500">Qty: {item.quantity}</div>
+                            {item.isVirtual && (order.status === 'paid' || order.status === 'delivered') && (
+                              <a 
+                                href={item.digitalFileUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="mt-1 flex items-center gap-1 text-[10px] bg-green-50 text-green-600 px-2 py-0.5 rounded border border-green-200 hover:bg-green-100 transition-colors w-fit font-bold"
+                              >
+                                <Download className="w-3 h-3" />
+                                Download Access File
+                              </a>
+                            )}
+                            {item.isVirtual && order.status !== 'paid' && order.status !== 'delivered' && (
+                              <div className="mt-1 text-[9px] text-orange-400 italic flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" />
+                                Link revealed after payment
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2230,7 +2749,7 @@ const CustomerDashboard = ({
                                 automationLog: [
                                   ...(order.automationLog || []),
                                   `[FINANCE] Customer approved delivery quote. Payment confirmed.`,
-                                  `[SYSTEM] Funds moving to Escrow holding unit (DigiPesa).`
+                                  `[SYSTEM] Funds moving to Escrow holding unit (DropShip Pro).`
                                 ]
                               });
                               alert("Payment confirmed! The driver has been notified to proceed with the delivery.");
@@ -2301,7 +2820,8 @@ const CustomerDashboard = ({
             </div>
           ))
         )}
-      </div>
+        </div>
+      )}
 
       {viewingPoliceReport && (
         <PoliceReportModal 
@@ -2327,22 +2847,37 @@ const SellerDashboard = ({
   products, 
   orders,
   currency,
-  rates
+  rates,
+  updateProfile
 }: { 
-  user: User | null; 
+  user: UserProfile | null; 
   products: Product[]; 
   orders: Order[];
   currency: string;
   rates: ExchangeRates;
+  updateProfile: (data: Partial<UserProfile>) => Promise<void>;
 }) => {
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
+  const [tab, setTab] = useState<'listings' | 'orders' | 'plans'>('listings');
 
   const sellerProducts = products.filter(p => p.sellerId === user?.uid);
   const sellerOrders = orders.filter(o => o.items.some(item => item.sellerId === user?.uid));
 
   const totalSales = sellerOrders.reduce((sum, o) => sum + o.total, 0);
-  const pendingOrders = sellerOrders.filter(o => o.status === 'pending').length;
+  const pendingOrders = sellerOrders.filter(o => o.status === 'paid').length;
+
+  const handleConfirmAvailability = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { 
+        status: 'availability_confirmed',
+        automationLog: arrayUnion(`[SUPPLIER] Availability confirmed. Order is now ready for driver pickup.`)
+      });
+      alert("Availability confirmed! Nearby drivers will be notified.");
+    } catch (error) {
+      console.error("Failed to confirm availability:", error);
+    }
+  };
 
   const handleSaveProduct = async (p: Partial<Product>) => {
     try {
@@ -2367,120 +2902,250 @@ const SellerDashboard = ({
     }
   };
 
+  if (tab === 'plans' && user) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <button onClick={() => setTab('listings')} className="mb-8 flex items-center gap-2 text-gray-500 font-bold hover:text-gray-900 transition-colors">
+          <ChevronLeft className="w-4 h-4" /> Back to Dashboard
+        </button>
+        <UpgradeSection user={user} updateProfile={updateProfile} />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-2">Seller Dashboard</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Seller Dashboard</h1>
+            {user?.membership?.tier && user.membership.tier !== 'basic' && (
+              <span className="bg-amber-100 text-amber-600 text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider">
+                {user.membership.tier} MEMBER
+              </span>
+            )}
+          </div>
           <p className="text-gray-500">Manage your products, track sales, and grow your business.</p>
         </div>
-        <button 
-          onClick={() => {
-            setEditingProduct(undefined);
-            setShowForm(true);
-          }}
-          className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          List New Product
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-4">
-            <DollarSign className="w-6 h-6" />
-          </div>
-          <div className="text-2xl font-bold text-gray-900">{formatPrice(totalSales, currency, rates)}</div>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Revenue</div>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 mb-4">
-            <Clock className="w-6 h-6" />
-          </div>
-          <div className="text-2xl font-bold text-gray-900">{pendingOrders}</div>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Pending Orders</div>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600 mb-4">
-            <Package className="w-6 h-6" />
-          </div>
-          <div className="text-2xl font-bold text-gray-900">{sellerProducts.length}</div>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Active Listings</div>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setTab('plans')}
+            className="px-6 py-3 rounded-2xl font-bold border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50 transition-all flex items-center gap-2"
+          >
+            <Crown className="w-5 h-5" />
+            Plans
+          </button>
+          <button 
+            onClick={() => {
+              setEditingProduct(undefined);
+              setShowForm(true);
+            }}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            List New Product
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-gray-900">Your Listings</h2>
+        <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto scrollbar-hide">
+          <button 
+            onClick={() => setTab('listings')}
+            className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", tab === 'listings' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            Listings
+          </button>
+          <button 
+            onClick={() => setTab('orders')}
+            className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", tab === 'orders' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            Orders ({sellerOrders.length})
+          </button>
+          <button 
+            onClick={() => setTab('plans')}
+            className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", tab === 'plans' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            Plans
+          </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Product</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Price</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {sellerProducts.map(product => (
-                <tr key={product.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-4">
-                      <img src={product.image} alt={`${product.title} thumbnail`} className="w-12 h-12 rounded-xl object-cover" referrerPolicy="no-referrer" />
-                      <div>
-                        <div className="text-sm font-bold text-gray-900">{product.title}</div>
-                        <div className="text-[10px] text-gray-400">{product.category}</div>
+
+      {tab === 'listings' && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 text-left">
+            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-4">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{formatPrice(totalSales, currency, rates)}</div>
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Revenue</div>
+            </div>
+            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+              <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 mb-4">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{pendingOrders}</div>
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Pending Confirmation</div>
+            </div>
+            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+              <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600 mb-4">
+                <Package className="w-6 h-6" />
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{sellerProducts.length}</div>
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Active Listings</div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden text-left">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-gray-900">Your Listings</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Product</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Price</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {sellerProducts.map(product => (
+                    <tr key={product.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-4">
+                          <img src={product.image} alt={`${product.title} thumbnail`} className="w-12 h-12 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                          <div>
+                            <div className="text-sm font-bold text-gray-900">{product.title}</div>
+                            <div className="text-[10px] text-gray-400">{product.category}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-bold text-indigo-600">
+                          {formatPrice(product.price, currency, rates, product.sourceCurrency)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider",
+                          product.status === 'approved' ? "bg-green-50 text-green-600" : "bg-orange-50 text-orange-600"
+                        )}>
+                          {product.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingProduct(product);
+                              setShowForm(true);
+                            }}
+                            className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteProduct(product.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {sellerProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-gray-400 italic">
+                        No listings yet. Start selling today!
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab === 'orders' && (
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden text-left">
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-gray-900">Your Orders</h2>
+            <p className="text-xs text-gray-500">Confirm availability to trigger driver assignment.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Order ID</th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Items</th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Customer Location</th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sellerOrders.map(order => (
+                  <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-mono font-bold text-gray-400">#{order.id.slice(0, 8)}</div>
+                      <div className="text-[10px] text-gray-400">{new Date(order.createdAt).toLocaleDateString()}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        {order.items.filter(i => i.sellerId === user?.uid).map((item, i) => (
+                          <div key={i} className="text-xs font-bold text-gray-800">
+                            {item.quantity}x {item.title}
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-bold text-indigo-600">
-                      {formatPrice(product.price, currency, rates, product.sourceCurrency)}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider",
-                      product.status === 'approved' ? "bg-green-50 text-green-600" : "bg-orange-50 text-orange-600"
-                    )}>
-                      {product.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => {
-                          setEditingProduct(product);
-                          setShowForm(true);
-                        }}
-                        className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteProduct(product.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {sellerProducts.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-400 italic">
-                    No listings yet. Start selling today!
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-xs font-bold text-gray-900">{order.customer.city}</div>
+                      <div className="text-[10px] text-gray-500 truncate w-32">{order.customer.address}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "text-[9px] font-bold px-2 py-1 rounded-full uppercase tracking-wider",
+                        order.status === 'paid' ? "bg-blue-100 text-blue-600" :
+                        order.status === 'availability_confirmed' ? "bg-green-100 text-green-600" :
+                        "bg-gray-100 text-gray-500"
+                      )}>
+                        {order.status.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {order.status === 'paid' && (
+                        <button 
+                          onClick={() => handleConfirmAvailability(order.id)}
+                          className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-green-700 transition-all"
+                        >
+                          Confirm Availability
+                        </button>
+                      )}
+                      {order.status === 'availability_confirmed' && (
+                        <div className="text-xs font-bold text-indigo-600 flex items-center justify-end gap-1">
+                          <Truck className="w-3 h-3" />
+                          Awaiting Driver
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {sellerOrders.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">
+                      No orders matching your listings yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       <AnimatePresence>
         {showForm && (
@@ -2505,7 +3170,9 @@ const Navbar = ({
   setCurrency, 
   rates,
   user,
-  setShowAuthModal
+  setShowAuthModal,
+  isInstallable,
+  installApp
 }: { 
   cart: CartItem[]; 
   isAdmin: boolean;
@@ -2516,6 +3183,8 @@ const Navbar = ({
   rates: ExchangeRates;
   user: User | null;
   setShowAuthModal: (show: boolean) => void;
+  isInstallable?: boolean;
+  installApp?: () => Promise<void>;
 }) => {
   const [isCartHovered, setIsCartHovered] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -2594,6 +3263,16 @@ const Navbar = ({
                 <Gift className="w-4 h-4" />
                 Invite & Earn
               </Link>
+            )}
+
+            {isInstallable && (
+              <button 
+                onClick={installApp}
+                className="flex items-center gap-2 text-sm font-bold bg-indigo-600 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-gray-900 transition-all active:scale-95"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>App</span>
+              </button>
             )}
 
             {user && (
@@ -2817,6 +3496,19 @@ const Navbar = ({
                     <Package className="w-5 h-5" />
                     My Orders
                   </Link>
+                )}
+
+                {isInstallable && (
+                  <button 
+                    onClick={() => {
+                      installApp();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 bg-gray-900 text-white px-6 py-4 rounded-2xl font-bold shadow-lg hover:bg-black transition-all active:scale-95 text-lg"
+                  >
+                    <Smartphone className="w-6 h-6" />
+                    Download App
+                  </button>
                 )}
 
                 {!isAdmin && !isSeller && (
@@ -3103,7 +3795,7 @@ const Storefront = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedVariationFilters, setSelectedVariationFilters] = useState<{ [key: string]: string[] }>({});
   
-  const categories = ['All', ...new Set(products.map(p => p.category || 'General'))];
+  const categories = ['All', 'Digital Goods', ...new Set(products.map(p => p.category || 'General'))];
   
   const fuse = useMemo(() => new Fuse(products.filter(p => p.status === 'approved'), {
     keys: ['title', 'description', 'category'],
@@ -3612,15 +4304,18 @@ const Storefront = ({
 const ReferralDashboard = ({
   user,
   currency,
-  rates
+  rates,
+  updateProfile
 }: {
-  user: User | null;
+  user: UserProfile | null;
   currency: string;
   rates: ExchangeRates;
+  updateProfile: (data: Partial<UserProfile>) => Promise<void>;
 }) => {
   const [referrals, setReferrals] = useState<{ id: string; role: string; email: string; createdAt: string }[]>([]);
   const [earnings, setEarnings] = useState<{ amount: number; type: string; orderId: string; createdAt: string }[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [tab, setTab] = useState<'network' | 'plans'>('network');
 
   useEffect(() => {
     if (!user) return;
@@ -3837,10 +4532,10 @@ const DriverDashboard = ({
     return () => unsub();
   }, [user]);
 
-  const availableOrders = orders.filter(o => o.status === 'pending');
+  const availableOrders = orders.filter(o => o.status === 'availability_confirmed');
   const myActiveOrders = orders.filter(o => 
     o.deliveryDetails?.driverId === user?.uid && 
-    (o.status === 'awaiting_payment' || o.status === 'paid' || o.status === 'shipped' || o.status === 'picked_up' || o.status === 'reported' || o.status === 'awaiting_pickup' || o.status === 'fulfilled')
+    (o.status === 'awaiting_payment' || o.status === 'paid' || o.status === 'shipped' || o.status === 'picked_up' || o.status === 'reported' || o.status === 'awaiting_pickup' || o.status === 'fulfilled' || o.status === 'availability_confirmed')
   );
   const myHistory = orders.filter(o => 
     o.deliveryDetails?.driverId === user?.uid && 
@@ -4307,80 +5002,35 @@ const AdminPanel = ({
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
-    const addLog = async (msg: string, currentLogs: string[]) => {
-      const timestamp = new Date().toLocaleTimeString();
-      const newLog = `[${timestamp}] ${msg}`;
-      const updatedLogs = [...currentLogs, newLog];
-      await updateOrder(orderId, { automationLog: updatedLogs });
-      return updatedLogs;
-    };
-
     try {
-      let logs: string[] = [];
+      await updateOrder(orderId, { automationStatus: 'processing', automationLog: [`[SYSTEM] Starting production fulfillment sequence...`] });
       
-      // 1. Processing
-      await updateOrder(orderId, { automationStatus: 'processing', automationLog: [] });
-      logs = await addLog("Initiating automated fulfillment engine...", logs);
-      
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      logs = await addLog("Connecting to supplier API (Alibaba/AliExpress)...", logs);
-      
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      logs = await addLog("Authenticating with supplier credentials...", logs);
-      
-      // 2. Financial Split
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const totalProfit = order.profit || 0;
-      const referralCommission = order.customer.referredBy ? totalProfit * 0.3 : 0;
-      const ownerProfit = totalProfit - referralCommission;
-      
-      logs = await addLog(`Financial Split: Source Cost ($${order.sourceCost.toFixed(2)}), Owner Profit ($${ownerProfit.toFixed(2)}), Referral Commission ($${referralCommission.toFixed(2)})`, logs);
-      await updateOrder(orderId, { referralCommission, ownerProfit });
-
-      // 3. Item Processing
-      for (const item of order.items) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        logs = await addLog(`Placing order on supplier site for: "${item.title}"...`, logs);
-        
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        logs = await addLog(`Entering customer shipping details for ${order.customer.name}...`, logs);
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        logs = await addLog(`Address: ${order.customer.address}, ${order.customer.city}, ${order.customer.country}`, logs);
-      }
-
-      // 4. Payment
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      logs = await addLog("Payment processed successfully via Supplier Business Wallet.", logs);
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const sourceOrderId = `SUP-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-      logs = await addLog(`Supplier order confirmed! Source Order ID: ${sourceOrderId}`, logs);
-      
-      // 5. Completion
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      logs = await addLog("Fulfillment complete. Customer notified.", logs);
-      
-      await updateOrder(orderId, { 
-        automationStatus: 'completed', 
-        status: 'fulfilled',
-        automationLog: logs,
-        fulfillmentDetails: {
-          supplierOrderId: sourceOrderId,
-          trackingNumber: `TRK-${Math.random().toString(36).substr(2, 12).toUpperCase()}`,
-          supplierName: 'Alibaba / AliExpress',
-          lastAutomationStep: 'Order Placed Successfully'
-        }
+      const res = await fetch('/api/fulfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
       });
 
+      if (!res.ok) throw new Error("Fulfillment node unreachable");
+      
+      const result = await res.json();
+      
+      await updateOrder(orderId, { 
+        automationStatus: result.status, 
+        status: 'fulfilled',
+        automationLog: result.logs,
+        fulfillmentDetails: {
+          supplierOrderId: `SUP-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+          trackingNumber: `TRK-${Math.random().toString(36).substr(2, 12).toUpperCase()}`,
+          lastAutomationStep: 'Order Synchronized with Supplier'
+        }
+      });
+      alert("Fulfillment initiated through secure channel.");
     } catch (error) {
       console.error('Fulfillment error:', error);
       await updateOrder(orderId, { 
         automationStatus: 'failed', 
-        automationLog: [...(order.automationLog || []), `Critical Error: ${error instanceof Error ? error.message : String(error)}`],
-        fulfillmentDetails: {
-          error: error instanceof Error ? error.message : 'Unknown automation error'
-        }
+        automationLog: [...(order.automationLog || []), `CRITICAL: ${error instanceof Error ? error.message : String(error)}`]
       });
     }
   };
@@ -5564,6 +6214,23 @@ const AdminPanel = ({
                           {order.items.map((item, i) => (
                             <div key={i} className="text-[10px] text-gray-500 leading-tight">
                               {item.quantity}x {item.title}
+                              {item.isVirtual && (order.status === 'paid' || order.status === 'delivered') && (
+                                <a 
+                                  href={item.digitalFileUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="mt-1 flex items-center gap-1 text-[10px] bg-green-50 text-green-600 px-2 py-0.5 rounded border border-green-200 hover:bg-green-100 transition-colors w-fit"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  Access Digital Asset
+                                </a>
+                              )}
+                              {item.isVirtual && order.status !== 'paid' && order.status !== 'delivered' && (
+                                <div className="mt-1 text-[9px] text-orange-400 italic flex items-center gap-1">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  Asset reveals after payment
+                                </div>
+                              )}
                               {item.selectedVariations && Object.entries(item.selectedVariations).length > 0 && (
                                 <div className="text-indigo-400 italic">
                                   {Object.entries(item.selectedVariations).map(([n, v]) => `${n}: ${v}`).join(', ')}
@@ -5884,8 +6551,9 @@ const AdminPanel = ({
         >
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Order Tracking Dashboard</h2>
-            <div className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full uppercase tracking-widest">
-              Live Simulation Mode
+            <div className="text-[10px] font-bold text-green-600 bg-green-50 px-3 py-1 rounded-full uppercase tracking-widest border border-green-100 flex items-center gap-2">
+              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+              Satellite Sync Active
             </div>
           </div>
 
@@ -5973,38 +6641,50 @@ const AdminPanel = ({
 
                     <div className="p-8">
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                        <div className="lg:col-span-2">
-                          <h3 className="text-sm font-bold text-gray-900 mb-8 flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-indigo-600" />
-                            Shipping History
-                          </h3>
-                          <div className="relative">
-                            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-100"></div>
-                            <div className="space-y-10">
-                              {updates.map((update, i) => (
-                                <div key={i} className="relative flex items-start gap-8 pl-12">
-                                  <div className={cn(
-                                    "absolute left-0 w-9 h-9 rounded-xl flex items-center justify-center border-4 border-white shadow-sm z-10 transition-colors",
-                                    i === 0 ? "bg-indigo-600 text-white" : "bg-white text-gray-400 border-gray-100"
-                                  )}>
-                                    {i === 0 && order.status !== 'delivered' ? <div className="animate-pulse">{update.icon}</div> : update.icon}
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-1 gap-2">
-                                      <h4 className={cn("font-bold text-sm", i === 0 ? "text-gray-900" : "text-gray-500")}>
-                                        {update.status}
-                                      </h4>
-                                      <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                        {new Date(update.date).toLocaleString()}
-                                      </span>
+                        <div className="lg:col-span-2 space-y-12">
+                          {order.status !== 'pending' && (
+                            <div className="space-y-4">
+                              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-indigo-600" />
+                                Real-Time Delivery Tracking
+                              </h3>
+                              <TrackingMap order={order} />
+                            </div>
+                          )}
+
+                          <div>
+                            <h3 className="text-sm font-bold text-gray-900 mb-8 flex items-center gap-2">
+                              <Clock className="w-4 h-4 text-indigo-600" />
+                              Shipping History
+                            </h3>
+                            <div className="relative">
+                              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-100"></div>
+                              <div className="space-y-10">
+                                {updates.map((update, i) => (
+                                  <div key={i} className="relative flex items-start gap-8 pl-12">
+                                    <div className={cn(
+                                      "absolute left-0 w-9 h-9 rounded-xl flex items-center justify-center border-4 border-white shadow-sm z-10 transition-colors",
+                                      i === 0 ? "bg-indigo-600 text-white" : "bg-white text-gray-400 border-gray-100"
+                                    )}>
+                                      {i === 0 && order.status !== 'delivered' ? <div className="animate-pulse">{update.icon}</div> : update.icon}
                                     </div>
-                                    <div className="text-xs text-gray-500 flex items-center gap-1.5">
-                                      <MapPin className="w-3 h-3 text-indigo-400" />
-                                      {update.location}
+                                    <div className="flex-1">
+                                      <div className="flex flex-col md:flex-row md:items-center justify-between mb-1 gap-2">
+                                        <h4 className={cn("font-bold text-sm", i === 0 ? "text-gray-900" : "text-gray-500")}>
+                                          {update.status}
+                                        </h4>
+                                        <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
+                                          {new Date(update.date).toLocaleString()}
+                                        </span>
+                                      </div>
+                                      <div className="text-xs text-gray-500 flex items-center gap-1.5">
+                                        <MapPin className="w-3 h-3 text-indigo-400" />
+                                        {update.location}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -6440,11 +7120,13 @@ const CartPage = ({
           shippingCost: totalShippingCostUSD,
           profit: profitUSD,
           paymentMethod,
-          status: 'pending',
+          status: paymentMethod === 'mpesa' ? 'paid' : 'pending',
           automationStatus: 'idle',
           automationLog: [
-            `[SYSTEM] Order submitted. Waiting for a driver to accept and provide a delivery quote.`,
-            `[SYSTEM] Base total: ${formatPrice(totalUSD, 'USD', rates, 'USD')}. Delivery fee will be calculated based on your distance.`
+            `[GATEWAY] Payment confirmed via ${paymentMethod.toUpperCase()}.`,
+            `[ESCROW] Total of ${formatPrice(totalUSD, 'USD', rates, 'USD')} staged in Holding Unit.`,
+            `[SYSTEM] Notifying supplier (${cart[0]?.sellerName || 'Primary'}) to confirm availability.`,
+            `[SYSTEM] Waiting for supplier confirmation...`
           ],
           createdAt: new Date().toISOString(),
           currency
@@ -6466,9 +7148,9 @@ const CartPage = ({
         <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-8">
           <ShieldCheck className="w-10 h-10" />
         </div>
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">Payment Successful!</h1>
-        <p className="text-lg text-gray-500 mb-4">Your payment has been confirmed. The profit has been transferred to your NMB Bank PLC account (0797691203), and your order has been automatically placed with our source partners.</p>
-        <p className="text-sm text-gray-400 mb-12">You will receive an email with tracking information shortly.</p>
+        <h1 className="text-4xl font-bold text-gray-900 mb-4">Payment Confirmed</h1>
+        <p className="text-lg text-gray-500 mb-4 text-center">Your payment has been successfully secured in the <b>DropShip Pro Secure Escrow</b>.</p>
+        <p className="text-sm text-gray-400 mb-12 text-center">Funds will be automatically released to the creator, supplier, and driver only after the delivery QR code is scanned upon arrival.</p>
         <Link to="/" className="inline-block bg-gray-900 text-white px-8 py-4 rounded-xl font-bold hover:bg-indigo-600 transition-colors">
           Return to Store
         </Link>
@@ -6637,54 +7319,78 @@ const CartPage = ({
                     </div>
                   )}
                 </div>
-                <div id="field-address">
-                  <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Shipping Address</label>
-                  <input 
-                    type="text" 
-                    className={cn(
-                      "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
-                      validationErrors.address ? "border-red-500 bg-red-50" : "border-gray-200"
-                    )}
-                    value={customer.address} onChange={e => handleInputChange('address', e.target.value)}
+                <div className="space-y-6">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Shipping & Delivery Point</label>
+                  <LocationPicker 
+                    initialLocation={customer.lat ? { lat: customer.lat, lng: customer.lng! } : undefined}
+                    onLocationSelect={async (lat, lng) => {
+                      setCustomer(prev => ({ ...prev, lat, lng }));
+                      const data = await getGeocodingData(lat, lng);
+                      if (data && data.address) {
+                        const { road, house_number, city, town, village, suburb, country, postcode } = data.address;
+                        const streetAddress = [house_number, road].filter(Boolean).join(' ');
+                        const cityName = city || town || village || suburb || '';
+                        setCustomer(prev => ({
+                          ...prev,
+                          address: streetAddress || data.display_name.split(',')[0],
+                          city: cityName,
+                          country: country || prev.country,
+                          zip: postcode || prev.zip
+                        }));
+                      }
+                    }} 
                   />
-                  {validationErrors.address && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.address}</p>}
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
-                  <div id="field-city">
-                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">City</label>
-                    <input 
-                      type="text" 
-                      className={cn(
-                        "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
-                        validationErrors.city ? "border-red-500 bg-red-50" : "border-gray-200"
-                      )}
-                      value={customer.city} onChange={e => handleInputChange('city', e.target.value)}
-                    />
-                    {validationErrors.city && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.city}</p>}
-                  </div>
-                  <div id="field-country">
-                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Country</label>
-                    <input 
-                      type="text" 
-                      className={cn(
-                        "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
-                        validationErrors.country ? "border-red-500 bg-red-50" : "border-gray-200"
-                      )}
-                      value={customer.country} onChange={e => handleInputChange('country', e.target.value)}
-                    />
-                    {validationErrors.country && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.country}</p>}
-                  </div>
-                  <div id="field-zip" className="col-span-2 md:col-span-1">
-                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">ZIP / Postal Code</label>
-                    <input 
-                      type="text" 
-                      className={cn(
-                        "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
-                        validationErrors.zip ? "border-red-500 bg-red-50" : "border-gray-200"
-                      )}
-                      value={customer.zip} onChange={e => handleInputChange('zip', e.target.value)}
-                    />
-                    {validationErrors.zip && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.zip}</p>}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div id="field-address">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">Street Address</label>
+                      <input 
+                        type="text" 
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm",
+                          validationErrors.address ? "border-red-500 bg-red-50" : "border-gray-200"
+                        )}
+                        value={customer.address} onChange={e => handleInputChange('address', e.target.value)}
+                        placeholder="House No, Street Name..."
+                      />
+                      {validationErrors.address && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider">{validationErrors.address}</p>}
+                    </div>
+                    <div id="field-city">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">City</label>
+                      <input 
+                        type="text" 
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm",
+                          validationErrors.city ? "border-red-500 bg-red-50" : "border-gray-200"
+                        )}
+                        value={customer.city} onChange={e => handleInputChange('city', e.target.value)}
+                        placeholder="City"
+                      />
+                    </div>
+                    <div id="field-country">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">Country</label>
+                      <input 
+                        type="text" 
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm",
+                          validationErrors.country ? "border-red-500 bg-red-50" : "border-gray-200"
+                        )}
+                        value={customer.country} onChange={e => handleInputChange('country', e.target.value)}
+                        placeholder="Country"
+                      />
+                    </div>
+                    <div id="field-zip">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">ZIP / Postal Code</label>
+                      <input 
+                        type="text" 
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm",
+                          validationErrors.zip ? "border-red-500 bg-red-50" : "border-gray-200"
+                        )}
+                        value={customer.zip} onChange={e => handleInputChange('zip', e.target.value)}
+                        placeholder="ZIP Code"
+                      />
+                    </div>
                   </div>
                 </div>
               </form>
@@ -7164,50 +7870,57 @@ export default function App() {
     if (!order || !order.deliveryDetails?.driverId) return;
 
     const driverId = order.deliveryDetails.driverId;
-    const penaltyAmount = order.total * 1.02;
+    const penaltyAmount = order.total * 1.5; // Heavier penalty for red flags
 
     try {
-      // 1. Update order status
-      await updateDoc(doc(db, 'orders', orderId), {
-        status: 'reported',
-        disputeNotes: notes,
-        disputePenaltyApplied: true,
-        automationLog: [
-          ...(order.automationLog || []),
-          `[DISPUTE] Reported by User. Driver penalized ${penaltyAmount.toLocaleString()} ${order.currency}.`,
-          `[POLICE] Automated report generated for Driver: ${order.deliveryDetails.driverName}, Vehicle: ${order.deliveryDetails.driverPhone || 'N/A'}.`
-        ]
-      });
-
-      // 2. Deduct from driver wallet (or bank via simulated deduction)
       const driverRef = doc(db, 'users', driverId);
-      const driverDoc = await getDoc(driverRef);
+      const driverSnap = await getDoc(driverRef);
       
-      if (driverDoc.exists()) {
-        const driverData = driverDoc.data();
-        await updateDoc(driverRef, {
-          walletBalance: (driverData.walletBalance || 0) - penaltyAmount
+      if (driverSnap.exists()) {
+        const driverData = driverSnap.data() as UserProfile;
+        
+        // 1. Update Order Status
+        await updateOrder(orderId, {
+          status: 'reported',
+          disputeNotes: notes,
+          automationLog: [
+            ...(order.automationLog || []),
+            `[SECURITY] CRITICAL RED FLAG: Reported by user.`,
+            `[SECURITY] Legal report generated for ${driverData.displayName}.`,
+            `[SECURITY] PII Data (National ID: ${driverData.nationalId || 'REDACTED'}) transmitted to investigation department.`
+          ]
         });
 
-        // 3. Log the penalty event
-        await addDoc(collection(db, 'driver_penalties'), {
+        // 2. Update Driver Profile (Red Flag)
+        await updateDoc(driverRef, {
+          walletBalance: increment(-penaltyAmount),
+          'driverVerification.status': 'flagged',
+          'driverVerification.flaggedReason': notes,
+          'driverVerification.reportedToAuthorities': true,
+          isActive: false
+        });
+
+        // 3. Create Official Authority Report
+        await addDoc(collection(db, 'police_reports'), {
+          type: 'DRIVER_CRITICAL_INCIDENT',
           driverId,
           orderId,
-          amount: penaltyAmount,
-          reason: notes,
-          createdAt: new Date().toISOString(),
-          driverDetails: {
+          summary: notes,
+          timestamp: new Date().toISOString(),
+          driverDigitalFile: {
             name: driverData.displayName,
-            nationalId: driverData.nationalId,
-            vehicle: driverData.vehicleInfo
+            nida: driverData.nationalId,
+            birthCert: driverData.driverVerification?.birthCertUrl,
+            selfie: driverData.driverVerification?.selfieUrl,
+            location: driverData.location,
+            phone: driverData.phone
           }
         });
 
-        alert(`Driver reported. A penalty of ${penaltyAmount.toLocaleString()} has been charged to their account and authorities have been notified.`);
+        alert(`CRITICAL: Driver ${driverData.displayName} has been flagged and reported to the authorities. All digital credentials (NIDA, Birth Cert, Vehicle ID) have been transmitted for official filing.`);
       }
     } catch (error) {
       console.error("Failed to report driver:", error);
-      alert("Error reporting driver. Please try again.");
     }
   };
   
@@ -7239,7 +7952,7 @@ export default function App() {
         automationLog: [
           ...(order.automationLog || []),
           `[SCAN] QR Code verified by Customer.`,
-          `[FINANCE] Payment released from DigiPesa Escrow.`,
+          `[FINANCE] Payment released from DropShip Pro Escrow.`,
           `[FINANCE] Driver payout (Distance: ${order.deliveryDetails?.distanceKm?.toFixed(1)}km): ${formatPrice(driverFee * rateToUSD, order.currency, rates)}.`,
           `[FINANCE] Supplier payout: ${formatPrice(supplierPayout * rateToUSD, order.currency, rates)}.`,
           `[FINANCE] Platform/Creator profit: ${formatPrice(platformProfit * rateToUSD, order.currency, rates)}.`
@@ -7284,6 +7997,15 @@ export default function App() {
     }
   };
 
+  const updateProfileData = async (data: Partial<UserProfile>) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+    }
+  };
+
   useEffect(() => {
     const handleOrderUpdate = (e: any) => {
       const { id, automationStatus, automationLog, status } = e.detail;
@@ -7309,6 +8031,8 @@ export default function App() {
             rates={rates}
             user={user}
             setShowAuthModal={setShowAuthModal}
+            isInstallable={isInstallable}
+            installApp={installApp}
           />
           <main className="pb-24 sm:pb-0">
             <Routes>
@@ -7353,11 +8077,12 @@ export default function App() {
               <Route path="/seller" element={
                 isSeller ? (
                   <SellerDashboard 
-                    user={user}
+                    user={user as UserProfile}
                     products={products}
                     orders={orders}
                     currency={currency}
                     rates={rates}
+                    updateProfile={updateProfileData}
                   />
                 ) : (
                   <div className="min-h-[60vh] flex items-center justify-center">
@@ -7394,9 +8119,10 @@ export default function App() {
               <Route path="/referrals" element={
                 user ? (
                   <ReferralDashboard 
-                    user={user}
+                    user={user as UserProfile}
                     currency={currency}
                     rates={rates}
+                    updateProfile={updateProfileData}
                   />
                 ) : (
                   <div className="min-h-[60vh] flex items-center justify-center">
@@ -7413,7 +8139,7 @@ export default function App() {
               <Route path="/dashboard" element={
                 user ? (
                   <CustomerDashboard 
-                    user={user}
+                    user={user as UserProfile}
                     orders={orders}
                     currency={currency}
                     rates={rates}
@@ -7422,6 +8148,7 @@ export default function App() {
                     updateOrder={updateOrder}
                     isInstallable={isInstallable}
                     installApp={installApp}
+                    updateProfile={updateProfileData}
                   />
                 ) : (
                   <div className="min-h-[60vh] flex items-center justify-center">

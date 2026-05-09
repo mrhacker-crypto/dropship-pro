@@ -1,5 +1,5 @@
 {
-  "name": "Dropship Pro Alpha",
-  "description": "Premium e-commerce marketplace in Dar es Salaam with WhatsApp ordering, seller signup, and advanced product filtering.",
+  "name": "DropShip Pro",
+  "description": "Global Dropshipping Ecosystem with Secure Escrow, Automated Fulfillment, and Real-Time Logistics Tracking.",
   "requestFramePermissions": ["geolocation", "camera"]
 }

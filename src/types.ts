@@ -38,6 +38,8 @@ export interface Product {
   sellerId?: string;
   sellerName?: string;
   type: 'dropship' | 'manual';
+  isVirtual?: boolean;
+  digitalFileUrl?: string;
   createdAt?: string;
 }
 
@@ -63,7 +65,21 @@ export interface UserProfile {
   phone?: string;
   referredBy?: string;
   referralEarnings?: number;
+  membership?: {
+    tier: 'basic' | 'pro' | 'elite';
+    expiresAt?: string;
+  };
   nationalId?: string;
+  driverVerification?: {
+    birthCertUrl?: string;
+    selfieUrl?: string;
+    licenseUrl?: string;
+    nidaNumber?: string;
+    status: 'pending' | 'verified' | 'rejected' | 'flagged';
+    flaggedReason?: string;
+    reportedToAuthorities?: boolean;
+    authorityCaseId?: string;
+  };
   vehicleInfo?: {
     type: string;
     plateNumber: string;
@@ -95,7 +111,7 @@ export interface Order {
   profit: number;
   currency: string;
   paymentMethod?: 'mpesa' | 'bank_transfer';
-  status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled' | 'awaiting_pickup' | 'picked_up' | 'disputed' | 'reported' | 'awaiting_payment';
+  status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled' | 'awaiting_pickup' | 'picked_up' | 'disputed' | 'reported' | 'awaiting_payment' | 'awaiting_confirmation' | 'availability_confirmed' | 'on_the_way';
   automationStatus?: 'idle' | 'processing' | 'completed' | 'failed';
   automationLog?: string[];
   disputeNotes?: string;
