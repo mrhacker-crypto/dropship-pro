@@ -1,179 +1,169 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: products
-    // Document ID: productId
-    // Fields:
-    //   - id: string (required)
-    //   - title: string (required)
-    //   - description: string
-    //   - features: list
-    //   - price: number (required)
-    //   - sourceCurrency: string (required)
-    //   - image: string (required)
-    //   - gallery: list
-    //   - sourceUrl: string (required)
-    //   - markup: number (required)
-    //   - status: string (required, 'pending' | 'approved')
-    //   - variations: list
-    //   - verificationLogs: list
-    //   - shippingInfo: string
-    //
-    // Collection: orders
-    // Document ID: orderId
-    // Fields:
-    //   - id: string (required)
-    //   - buyerId: string (required)
-    //   - items: list (required)
-    //   - customer: map (required)
-    //   - total: number (required)
-    //   - currency: string (required)
-    //   - status: string (required)
-    //   - automationStatus: string
-    //   - automationLog: list
-    //   - createdAt: string (required)
-    //   - stripeSessionId: string
-    //
-    // Collection: users
-    // Document ID: userId
-    // Fields:
-    //   - uid: string (required)
-    //   - email: string (required)
-    //   - displayName: string
-    //   - role: string (required, 'buyer' | 'seller' | 'admin' | 'user')
-    //   - createdAt: string (required)
-    //
-    // ===============================================================
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
-    // ===============================================================
     // Helper Functions
-    // ===============================================================
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
     function isAdmin() {
-      return isAuthenticated() &&
-        (
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller')) ||
-          (request.auth.token.email == "mr.dummy3719@gmail.com")
-        );
-    }
-
-    function isValidProduct(data) {
-      return data.keys().hasOnly(['id', 'title', 'description', 'features', 'price', 'sourceCurrency', 'image', 'gallery', 'sourceUrl', 'markup', 'status', 'variations', 'verificationLogs', 'shippingInfo', 'isVerified', 'category', 'sellerId', 'sellerName', 'type', 'createdAt']) &&
-             data.keys().hasAll(['id', 'title', 'price', 'sourceCurrency', 'image', 'markup', 'status', 'type']) &&
-             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
-             data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
-             data.price is number && data.price >= 0 &&
-             data.markup is number && data.markup >= 0 &&
-             data.status in ['pending', 'approved'] &&
-             data.type in ['dropship', 'manual'] &&
-             (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() < 2000)) &&
-             data.image is string && data.image.size() < 1000000; // Allow larger for base64 if needed, but 1MB is limit
-    }
-
-    function isValidOrder(data) {
-      return data.keys().hasOnly(['id', 'buyerId', 'items', 'customer', 'total', 'currency', 'status', 'automationStatus', 'automationLog', 'createdAt', 'stripeSessionId', 'sourceCost', 'shippingCost', 'profit', 'paymentMethod']) &&
-             data.keys().hasAll(['id', 'buyerId', 'items', 'customer', 'total', 'currency', 'status', 'createdAt']) &&
-             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
-             data.buyerId is string && data.buyerId.size() > 0 && data.buyerId.size() < 100 &&
-             data.total is number && data.total >= 0 &&
-             data.status in ['pending', 'paid', 'fulfilled', 'shipped', 'delivered', 'cancelled'] &&
-             data.customer is map &&
-             data.customer.email is string &&
-             data.items is list && data.items.size() > 0 && data.items.size() < 50;
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'seller']) ||
+        request.auth.token.email == "mr.dummy3719@gmail.com"
+      );
     }
 
     function isValidUser(data) {
-      return data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
-             data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
-             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
-             data.email is string && data.email.size() > 0 && data.email.size() < 200 &&
-             data.role in ['buyer', 'seller', 'admin', 'user'] &&
-             data.createdAt is string;
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 256 &&
+             data.role in ['buyer', 'seller', 'admin', 'user', 'driver'] &&
+             data.createdAt is string &&
+             (!('referralEarnings' in data) || data.referralEarnings is number) &&
+             (!('walletBalance' in data) || data.walletBalance is number);
     }
 
-    function isValidChat(data) {
-      return data.keys().hasOnly(['id', 'buyerId', 'buyerName', 'buyerEmail', 'lastMessage', 'lastMessageTimestamp', 'unreadCountSeller', 'unreadCountBuyer', 'updatedAt']) &&
-             data.keys().hasAll(['id', 'buyerId', 'buyerName', 'updatedAt']) &&
-             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
-             data.buyerId is string && data.buyerId.size() > 0 && data.buyerId.size() < 100 &&
-             data.buyerName is string && data.buyerName.size() > 0 && data.buyerName.size() < 500;
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'title', 'price', 'sourceCurrency', 'image', 'markup', 'status', 'type']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 512 &&
+             data.price is number && data.price >= 0 &&
+             data.markup is number && data.markup >= 0 &&
+             data.status in ['pending', 'approved'] &&
+             data.type in ['dropship', 'manual'];
     }
 
-    function isValidChatMessage(data) {
-      return data.keys().hasOnly(['id', 'senderId', 'senderName', 'text', 'timestamp', 'read']) &&
-             data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
-             data.senderId is string && data.senderId.size() > 0 && data.senderId.size() < 100 &&
-             data.text is string && data.text.size() > 0 && data.text.size() < 10000;
+    function isValidOrder(data) {
+      return data.keys().hasAll(['id', 'buyerId', 'items', 'customer', 'total', 'currency', 'status', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.buyerId is string && data.buyerId.size() > 0 &&
+             data.total is number && data.total >= 0 &&
+             data.status in ['pending', 'paid', 'fulfilled', 'shipped', 'delivered', 'cancelled', 'awaiting_pickup', 'picked_up', 'disputed', 'reported', 'awaiting_payment'] &&
+             data.items is list && data.items.size() > 0 && data.items.size() <= 50;
     }
 
     function isValidReview(data) {
       return data.keys().hasAll(['id', 'userId', 'userName', 'rating', 'comment', 'createdAt']) &&
-             data.id is string && data.id.size() > 0 &&
-             data.userId is string && data.userId == request.auth.uid &&
-             data.userName is string && data.userName.size() > 0 &&
-             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
-             data.comment is string && data.comment.size() > 0 && data.comment.size() < 5000 &&
-             data.createdAt is string;
+             data.userId == request.auth.uid &&
+             data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 5000;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['id', 'buyerId', 'buyerName', 'updatedAt']) &&
+             data.buyerId == request.auth.uid;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.text is string && data.text.size() <= 10000;
+    }
+
+    function isValidReferralEarning(data) {
+      return data.keys().hasAll(['referrerId', 'amount', 'createdAt']) &&
+             data.referrerId is string && data.amount is number;
+    }
+
+    function isValidDriverPenalty(data) {
+      return data.keys().hasAll(['driverId', 'orderId', 'amount', 'createdAt']) &&
+             data.driverId is string && data.amount is number;
+    }
+
+    // Collections
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin() || (isSignedIn() && resource.data.referredBy == request.auth.uid);
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role != 'admin';
+      allow update: if (isSignedIn() && ((isOwner(userId) && isValidUser(incoming()) && incoming().role == existing().role && (
+        // Only allow updating certain fields if not admin
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'location', 'referredBy', 'phoneNumber', 'nationalId', 'vehicleInfo', 'bankAccount', 'isActive'])
+      )) || (
+        isAdmin() ||
+        // Action: Payout Increment (Allow anyone to GIVE money but not take it or change other fields)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance']) && 
+         incoming().walletBalance > existing().get('walletBalance', 0))
+      )));
     }
 
     match /products/{productId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidProduct(request.resource.data) && 
-                    (request.resource.data.type == 'dropship' || request.resource.data.sellerId == request.auth.uid);
-      allow update: if isAdmin() && isValidProduct(request.resource.data) &&
-                    (request.resource.data.type == 'dropship' || resource.data.sellerId == request.auth.uid);
-      allow delete: if isAdmin() && (resource.data.type == 'dropship' || resource.data.sellerId == request.auth.uid);
+      allow create, update: if isAdmin() && isValidProduct(incoming());
+      allow delete: if isAdmin();
 
       match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if isAuthenticated() && isValidReview(request.resource.data);
-        allow update, delete: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.userId);
+        allow create: if isSignedIn() && isValidReview(incoming()) && isValidId(productId) && isValidId(reviewId);
+        allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       }
     }
 
     match /orders/{orderId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.buyerId == request.auth.uid);
-      allow create: if isAuthenticated() && isValidOrder(request.resource.data) && request.resource.data.buyerId == request.auth.uid;
-      allow update: if isAdmin() && isValidOrder(request.resource.data);
+      allow get: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.deliveryDetails.driverId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.deliveryDetails.driverId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidOrder(incoming()) && incoming().buyerId == request.auth.uid && isValidId(orderId);
+      allow update: if (isSignedIn() && isValidOrder(incoming()) && (
+        isAdmin() ||
+        // Action: Driver Pickup
+        (existing().status == 'awaiting_pickup' && 
+         incoming().status == 'shipped' && 
+         incoming().deliveryDetails.driverId == request.auth.uid &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'deliveryDetails', 'automationLog', 'updatedAt'])) ||
+        // Action: Driver Status Update (Delivered/Picked Up)
+        (existing().deliveryDetails.driverId == request.auth.uid && 
+         incoming().status in ['delivered', 'picked_up', 'shipped'] &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'automationLog', 'updatedAt'])) ||
+        // Action: Buyer Cancel
+        (existing().buyerId == request.auth.uid && 
+         existing().status == 'pending' && 
+         incoming().status == 'cancelled' &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'automationLog', 'updatedAt'])) ||
+        // Action: Buyer Dispute/Report
+        (existing().buyerId == request.auth.uid && 
+         incoming().status in ['disputed', 'reported'] &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disputeNotes', 'automationLog', 'updatedAt', 'disputePenaltyApplied']))
+      )) || isAdmin();
       allow delete: if isAdmin();
     }
 
     match /chats/{chatId} {
-      allow read: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid);
-      allow create: if isAuthenticated() && isValidChat(request.resource.data) && chatId == request.auth.uid && request.resource.data.buyerId == request.auth.uid;
-      allow update: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid && isValidChat(request.resource.data));
-      allow delete: if isAdmin();
+      allow get: if isAdmin() || isOwner(chatId);
+      allow list: if isAdmin() || isOwner(chatId);
+      allow create: if isOwner(chatId) && isValidChat(incoming()) && isValidId(chatId);
+      allow update: if isAdmin() || isOwner(chatId);
 
       match /messages/{messageId} {
-        allow read: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid);
-        allow create: if (isAdmin() || (isAuthenticated() && chatId == request.auth.uid)) && isValidChatMessage(request.resource.data);
-        allow update: if isAdmin() || (isAuthenticated() && chatId == request.auth.uid && isValidChatMessage(request.resource.data));
-        allow delete: if isAdmin();
+        allow read: if isAdmin() || isOwner(chatId);
+        allow create: if (isAdmin() || isOwner(chatId)) && isValidChatMessage(incoming()) && isValidId(messageId);
       }
     }
 
-    match /users/{userId} {
-      allow read: if isAuthenticated() && request.auth.uid == userId;
-      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data);
-      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role);
+    match /referral_earnings/{earningId} {
+      allow get, list: if isSignedIn() && (resource.data.referrerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidReferralEarning(incoming()); 
+      allow update, delete: if isAdmin();
     }
 
-    match /test/connection {
-      allow read: if true;
+    match /driver_penalties/{penaltyId} {
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isSignedIn() && isValidDriverPenalty(incoming());
+      allow update, delete: if isAdmin();
     }
 
     match /settings/exchangeRates {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

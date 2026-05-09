@@ -146,10 +146,39 @@
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["buyer", "seller", "admin", "user"] },
-        "createdAt": { "type": "string" }
+        "role": { "type": "string", "enum": ["buyer", "seller", "admin", "user", "driver"] },
+        "createdAt": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "referralEarnings": { "type": "number" },
+        "walletBalance": { "type": "number" }
       },
       "required": ["uid", "email", "role", "createdAt"]
+    },
+    "ReferralEarning": {
+      "title": "ReferralEarning",
+      "description": "An earning event from a referral",
+      "type": "object",
+      "properties": {
+        "referrerId": { "type": "string" },
+        "orderId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["referrerId", "orderId", "amount", "createdAt"]
+    },
+    "DriverPenalty": {
+      "title": "DriverPenalty",
+      "description": "A penalty applied to a driver",
+      "type": "object",
+      "properties": {
+        "driverId": { "type": "string" },
+        "orderId": { "type": "string" },
+        "amount": { "type": "number" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["driverId", "orderId", "amount", "createdAt"]
     },
     "ExchangeRates": {
       "title": "ExchangeRates",
@@ -187,6 +216,14 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection of user profiles"
+    },
+    "/referral_earnings/{earningId}": {
+      "schema": "ReferralEarning",
+      "description": "Log of referral earnings"
+    },
+    "/driver_penalties/{penaltyId}": {
+      "schema": "DriverPenalty",
+      "description": "Log of driver penalties"
     },
     "/settings/exchangeRates": {
       "schema": "ExchangeRates",

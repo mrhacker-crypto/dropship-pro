@@ -1,6 +1,7 @@
 export interface VariationOption {
   name: string;
   image?: string;
+  priceModifier?: number;
 }
 
 export interface Variation {
@@ -48,7 +49,39 @@ export interface CustomerInfo {
   city: string;
   country: string;
   zip: string;
+  lat?: number;
+  lng?: number;
   referredBy?: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: 'buyer' | 'seller' | 'driver' | 'admin';
+  createdAt: string;
+  phone?: string;
+  referredBy?: string;
+  referralEarnings?: number;
+  nationalId?: string;
+  vehicleInfo?: {
+    type: string;
+    plateNumber: string;
+    model: string;
+    color: string;
+  };
+  bankAccount?: {
+    accountName: string;
+    accountNumber: string;
+    bankName: string;
+  };
+  walletBalance?: number;
+  location?: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  isActive?: boolean;
 }
 
 export interface Order {
@@ -62,15 +95,38 @@ export interface Order {
   profit: number;
   currency: string;
   paymentMethod?: 'mpesa' | 'bank_transfer';
-  status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled' | 'awaiting_pickup' | 'picked_up' | 'disputed' | 'reported' | 'awaiting_payment';
   automationStatus?: 'idle' | 'processing' | 'completed' | 'failed';
   automationLog?: string[];
+  disputeNotes?: string;
+  disputePenaltyApplied?: boolean;
+  confirmationCode?: string;
   fulfillmentDetails?: {
     supplierOrderId?: string;
     trackingNumber?: string;
     supplierName?: string;
+    shippedAt?: string;
     lastAutomationStep?: string;
     error?: string;
+  };
+  deliveryDetails?: {
+    driverId?: string;
+    driverName?: string;
+    driverPhone?: string;
+    offeredAt?: string;
+    acceptedAt?: string;
+    pickedUpAt?: string;
+    deliveredAt?: string;
+    pickupLocation?: string;
+    dropoffLocation?: string;
+    startLat?: number;
+    startLng?: number;
+    pickupLat?: number;
+    pickupLng?: number;
+    dropoffLat?: number;
+    dropoffLng?: number;
+    distanceKm?: number;
+    deliveryFee?: number;
   };
   referralCommission?: number;
   ownerProfit?: number;

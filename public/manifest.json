@@ -1,0 +1,24 @@
+{
+  "name": "DigiPesa Marketplace",
+  "short_name": "DigiPesa",
+  "description": "Global Sourcing & Local Fulfillment Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/isometric/192/shopping-cart.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://img.icons8.com/isometric/512/shopping-cart.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

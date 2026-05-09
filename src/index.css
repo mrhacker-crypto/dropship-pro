@@ -7,6 +7,23 @@
 
 body {
   @apply bg-white antialiased;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  overscroll-behavior-y: contain;
+}
+
+.safe-area-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+}
+
+.app-touch-target {
+  @apply min-h-[44px] min-w-[44px];
+}
+
+/* Disable text selection on UI elements for a native feel */
+button, nav, .no-select {
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 input, select {

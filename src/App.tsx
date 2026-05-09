@@ -1,17 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
 import React, { useState, useEffect, Component, useCallback, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft, Gift, Copy, Link as LinkIcon, UserPlus, Users, ShieldAlert, User as UserIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, CartItem, CustomerInfo, Order, ExchangeRates, Chat, ChatMessage, Review } from './types';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer, addDoc, serverTimestamp, where, limit, getDocs, getDoc } from 'firebase/firestore';
+import { Product, CartItem, CustomerInfo, Order, ExchangeRates, Chat, ChatMessage, Review, UserProfile } from './types';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocFromServer, addDoc, serverTimestamp, where, limit, getDocs, getDoc, increment } from 'firebase/firestore';
 import { signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
 import * as Slider from '@radix-ui/react-slider';
 import Fuse from 'fuse.js';
+import { QRCodeSVG } from 'qrcode.react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 enum OperationType {
   CREATE = 'create',
@@ -208,6 +210,269 @@ const AutomationLogView = ({ logs }: { logs?: string[] }) => {
       )}
     </div>
   );
+};
+
+const PoliceReportModal = ({ 
+  order, 
+  onClose,
+  currency,
+  rates
+}: { 
+  order: Order; 
+  onClose: () => void;
+  currency: string;
+  rates: ExchangeRates;
+}) => {
+  const [driver, setDriver] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDriver = async () => {
+      if (!order.deliveryDetails?.driverId) return;
+      try {
+        const snap = await getDoc(doc(db, 'users', order.deliveryDetails.driverId));
+        if (snap.exists()) setDriver(snap.data() as UserProfile);
+      } catch (error) {
+        console.error("Error fetching driver for report:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDriver();
+  }, [order.deliveryDetails?.driverId]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl"
+      >
+        <div className="bg-red-600 px-8 py-6 text-white flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-6 h-6 animate-pulse" />
+            <h2 className="text-xl font-bold uppercase tracking-widest">Official Incident Report</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="p-8 max-h-[80vh] overflow-y-auto">
+          <div className="flex justify-between items-start mb-8 pb-6 border-b border-gray-100">
+            <div>
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Case Reference</div>
+              <div className="font-mono text-lg font-bold text-gray-900">INC-{order.id}-POLICE</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Date Reported</div>
+              <div className="text-sm font-bold text-gray-900">{new Date(order.createdAt).toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                   <UserIcon className="w-3 h-3" /> Driver Information
+                </h3>
+                {loading ? (
+                  <div className="flex items-center gap-2 text-gray-400 italic text-sm">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Fetching NIDA records...
+                  </div>
+                ) : driver ? (
+                  <div className="space-y-2 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase">Full Name</div>
+                      <div className="text-sm font-bold text-gray-900">{driver.displayName}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase">National ID (NIDA)</div>
+                      <div className="text-sm font-mono font-bold text-red-600">{driver.nationalId}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase">Phone Number</div>
+                      <div className="text-sm font-bold text-gray-900">{driver.phone}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-red-500 font-bold">DRIVER RECORDS NOT FOUND</div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                   <Truck className="w-3 h-3" /> Vehicle Records
+                </h3>
+                {driver?.vehicleInfo ? (
+                  <div className="space-y-2 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase">Plate Number</div>
+                        <div className="text-sm font-mono font-bold text-gray-900">{driver.vehicleInfo.plateNumber}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase">Vehicle Type</div>
+                        <div className="text-sm font-bold text-gray-900">{driver.vehicleInfo.type}</div>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase">Description</div>
+                      <div className="text-sm font-bold text-gray-900">{driver.vehicleInfo.model} • {driver.vehicleInfo.color}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400 italic">No vehicle information registered.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                   <CreditCard className="w-3 h-3" /> Financial Penalty
+                </h3>
+                <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
+                  <div className="flex justify-between items-center mb-2">
+                     <span className="text-[10px] font-bold text-red-400 uppercase">Order Value</span>
+                     <span className="text-sm font-bold text-gray-900">{formatPrice(order.total, order.currency, rates)}</span>
+                  </div>
+                  <div className="flex justify-between items-center mb-4">
+                     <span className="text-[10px] font-bold text-red-400 uppercase">Penalty (2%)</span>
+                     <span className="text-sm font-bold text-red-600">{formatPrice(order.total * 0.02, order.currency, rates)}</span>
+                  </div>
+                  <div className="pt-3 border-t border-red-200 flex justify-between items-center font-black">
+                     <span className="text-[10px] uppercase text-red-600">Total Deducted</span>
+                     <span className="text-lg text-red-600">{formatPrice(order.total * 1.02, order.currency, rates)}</span>
+                  </div>
+                  <div className="mt-4 text-[9px] text-red-500 italic bg-white/50 p-2 rounded-lg">
+                    Funds have been automatically deducted from driver's registered bank account: {driver?.bankAccount?.bankName} ({driver?.bankAccount?.accountNumber})
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                   <AlertCircle className="w-3 h-3" /> Incident Description
+                </h3>
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 min-h-[100px]">
+                  <p className="text-sm text-gray-700 leading-relaxed italic">"{order.disputeNotes}"</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-900 rounded-2xl p-6 text-white">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">Authority Transmission</div>
+                <div className="text-sm font-bold text-white">Reported to Police HQ</div>
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400 leading-relaxed mb-4">
+              This incident has been logged in the National Integrated Security System. The driver's NIDA (National Identification Authority) record has been flagged for investigation regarding the disappearance of goods for Order #{order.id}.
+            </p>
+            <div className="flex gap-4">
+              <div className="px-3 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-[9px] font-bold uppercase">NIDA Flagged</div>
+              <div className="px-3 py-1 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-bold uppercase tracking-wider">Case ID Generated</div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const ConfirmationQRModal = ({ order, onClose }: { order: Order, onClose: () => void }) => {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <div className="bg-white rounded-[2.5rem] w-full max-w-sm overflow-hidden p-8 text-center">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">Delivery QR</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        
+        <div className="bg-white p-4 rounded-3xl border-2 border-indigo-100 mb-6 flex justify-center">
+          <QRCodeSVG 
+            value={JSON.stringify({ orderId: order.id, code: order.confirmationCode })} 
+            size={200}
+            level="H"
+            includeMargin
+          />
+        </div>
+        
+        <div className="mb-6">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Manual Backup Code</div>
+          <div className="text-2xl font-black text-indigo-600 tracking-widest">{order.confirmationCode}</div>
+        </div>
+        
+        <p className="text-xs text-gray-400 font-medium">Ask the customer to scan this QR code or enter the manual code to confirm receipt and finalize payment.</p>
+      </div>
+    </div>
+  );
+};
+
+const QRScannerModal = ({ onScan, onClose }: { onScan: (data: string) => void, onClose: () => void }) => {
+  useEffect(() => {
+    const scanner = new Html5QrcodeScanner(
+      "qr-reader",
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      /* verbose= */ false
+    );
+    
+    const onScanSuccess = (decodedText: string) => {
+      scanner.clear().then(() => {
+        onScan(decodedText);
+      }).catch(err => {
+        console.error("Failed to clear scanner", err);
+        onScan(decodedText);
+      });
+    };
+
+    scanner.render(onScanSuccess, () => {});
+    
+    return () => {
+      scanner.clear().catch(() => {});
+    };
+  }, [onScan]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <div className="bg-white rounded-[2.5rem] w-full max-w-sm overflow-hidden p-8">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">Scan Confirmation</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div id="qr-reader" className="overflow-hidden rounded-2xl border-2 border-dashed border-gray-200"></div>
+        <p className="text-xs text-gray-400 mt-4 text-center font-medium">Position the driver's QR code within the frame to confirm receipt and release payment.</p>
+      </div>
+    </div>
+  );
+};
+
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+const calculateDeliveryFee = (distanceKm: number) => {
+  const BASE_RATE = 2000;
+  const PER_KM_RATE = 1000;
+  return BASE_RATE + (distanceKm * PER_KM_RATE);
 };
 
 const VerificationLogs = ({ logs }: { logs?: string[] }) => {
@@ -421,10 +686,29 @@ const ProductModal = ({
   const [editedTitle, setEditedTitle] = useState(product.title);
   const [editedDescription, setEditedDescription] = useState(product.description);
 
+  const priceModifier = useMemo(() => {
+    let modifier = 0;
+    if (product.variations) {
+      product.variations.forEach(v => {
+        const selectedValue = selectedVariations[v.name];
+        if (selectedValue) {
+          const option = v.options.find(o => o.name === selectedValue);
+          if (option?.priceModifier) {
+            modifier += option.priceModifier;
+          }
+        }
+      });
+    }
+    return modifier;
+  }, [product.variations, selectedVariations]);
+
+  const currentPrice = product.price + priceModifier;
+
   useEffect(() => {
     setCurrentImage(product.image);
     setEditedTitle(product.title);
     setEditedDescription(product.description);
+    setQuantity(1);
   }, [product]);
 
   return (
@@ -480,14 +764,14 @@ const ProductModal = ({
                     placeholder="Product Title"
                   />
                   <div className="text-xl sm:text-2xl font-extrabold text-indigo-600">
-                    {formatPrice(product.price * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
+                    {formatPrice(currentPrice * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
                   </div>
                 </div>
               ) : (
                 <>
                   <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2 leading-tight">{product.title}</h2>
                   <div className="text-xl sm:text-2xl font-extrabold text-indigo-600">
-                    {formatPrice(product.price * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
+                    {formatPrice(currentPrice * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
                   </div>
                 </>
               )}
@@ -568,20 +852,33 @@ const ProductModal = ({
                                       {opt.image ? (
                                         <div 
                                           className={cn(
-                                            "w-14 h-14 rounded-xl overflow-hidden border-2 transition-all",
+                                            "w-14 h-14 rounded-xl overflow-hidden border-2 transition-all relative",
                                             selectedVariations[v.name] === opt.name ? "border-indigo-600 shadow-md" : "border-transparent"
                                           )}
                                         >
                                           <img src={opt.image || null} alt={`${opt.name} variation image`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                          {opt.priceModifier && opt.priceModifier > 0 && (
+                                            <div className="absolute bottom-0 right-0 left-0 bg-indigo-600/90 text-white text-[7px] font-black py-0.5 px-1 truncate">
+                                              +{formatPrice(opt.priceModifier * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
+                                            </div>
+                                          )}
                                         </div>
                                       ) : (
                                         <div className={cn(
-                                          "min-w-[40px] h-10 px-3 flex items-center justify-center rounded-xl text-[11px] font-bold border transition-all",
+                                          "min-w-[40px] h-10 px-3 flex flex-col items-center justify-center rounded-xl border transition-all",
                                           selectedVariations[v.name] === opt.name 
                                             ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" 
                                             : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
                                         )}>
-                                          {opt.name}
+                                          <span className="text-[11px] font-bold">{opt.name}</span>
+                                          {opt.priceModifier && opt.priceModifier > 0 && (
+                                            <span className={cn(
+                                              "text-[7px] font-black uppercase tracking-tighter",
+                                              selectedVariations[v.name] === opt.name ? "text-indigo-200" : "text-indigo-500"
+                                            )}>
+                                              +{formatPrice(opt.priceModifier * (1 + product.markup / 100), currency, rates, product.sourceCurrency)}
+                                            </span>
+                                          )}
                                         </div>
                                       )}
                                       {opt.image && (
@@ -716,7 +1013,10 @@ const ProductModal = ({
                 ) : (
                   <button
                     onClick={() => {
-                      addToCart?.(product, selectedVariations, quantity);
+                      addToCart?.({
+                        ...product,
+                        price: currentPrice
+                      }, selectedVariations, quantity);
                       onClose();
                     }}
                     className="flex-1 bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-gray-200"
@@ -929,7 +1229,11 @@ const AuthModal = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [role, setRole] = useState<'buyer' | 'seller'>('buyer');
+  const [role, setRole] = useState<'buyer' | 'seller' | 'driver'>('buyer');
+  const [phone, setPhone] = useState('');
+  const [nationalId, setNationalId] = useState('');
+  const [vehicleInfo, setVehicleInfo] = useState({ type: 'Motorcycle', plateNumber: '', model: '', color: '' });
+  const [bankAccount, setBankAccount] = useState({ accountName: '', accountNumber: '', bankName: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -947,12 +1251,21 @@ const AuthModal = ({
           displayName: username
         });
         
+        const referrer = localStorage.getItem('referrer');
+        
         // Save user role to Firestore
         await setDoc(doc(db, 'users', userCredential.user.uid), {
           uid: userCredential.user.uid,
           email: userCredential.user.email,
           displayName: username,
+          phone: role === 'driver' ? phone : null,
           role: role,
+          referredBy: referrer || null,
+          referralEarnings: 0,
+          walletBalance: 0,
+          nationalId: role === 'driver' ? nationalId : null,
+          vehicleInfo: role === 'driver' ? vehicleInfo : null,
+          bankAccount: role === 'driver' ? bankAccount : null,
           createdAt: new Date().toISOString()
         });
       }
@@ -1061,29 +1374,152 @@ const AuthModal = ({
           {!isLogin && (
             <div>
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Account Type</label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setRole('buyer')}
                   className={cn(
-                    "py-3 rounded-xl font-bold border-2 transition-all flex items-center justify-center gap-2",
+                    "py-3 rounded-xl font-bold border-2 transition-all flex flex-col items-center justify-center gap-1",
                     role === 'buyer' ? "border-indigo-600 bg-indigo-50 text-indigo-600" : "border-gray-100 text-gray-400 hover:border-gray-200"
                   )}
                 >
                   <ShoppingCart className="w-4 h-4" />
-                  Buyer
+                  <span className="text-[10px]">Buyer</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setRole('seller')}
                   className={cn(
-                    "py-3 rounded-xl font-bold border-2 transition-all flex items-center justify-center gap-2",
+                    "py-3 rounded-xl font-bold border-2 transition-all flex flex-col items-center justify-center gap-1",
                     role === 'seller' ? "border-indigo-600 bg-indigo-50 text-indigo-600" : "border-gray-100 text-gray-400 hover:border-gray-200"
                   )}
                 >
                   <Store className="w-4 h-4" />
-                  Seller
+                  <span className="text-[10px]">Seller</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('driver')}
+                  className={cn(
+                    "py-3 rounded-xl font-bold border-2 transition-all flex flex-col items-center justify-center gap-1",
+                    role === 'driver' ? "border-indigo-600 bg-indigo-50 text-indigo-600" : "border-gray-100 text-gray-400 hover:border-gray-200"
+                  )}
+                >
+                  <Truck className="w-4 h-4" />
+                  <span className="text-[10px]">Driver</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!isLogin && role === 'driver' && (
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+              <div className="flex items-center gap-2 text-indigo-600 mb-2">
+                <ShieldCheck className="w-5 h-5" />
+                <span className="text-sm font-bold">Driver Security Verification</span>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Phone Number</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                  placeholder="+255..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">National ID / NIDA</label>
+                <input
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                  placeholder="ID Number"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Vehicle Plate</label>
+                  <input
+                    type="text"
+                    value={vehicleInfo.plateNumber}
+                    onChange={(e) => setVehicleInfo({...vehicleInfo, plateNumber: e.target.value})}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                    placeholder="T 123 ABC"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Vehicle Type</label>
+                  <select
+                    value={vehicleInfo.type}
+                    onChange={(e) => setVehicleInfo({...vehicleInfo, type: e.target.value})}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-xs"
+                  >
+                    <option>Motorcycle</option>
+                    <option>Bajaj</option>
+                    <option>Small Car</option>
+                    <option>Van</option>
+                    <option>Truck</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Model</label>
+                  <input
+                    type="text"
+                    value={vehicleInfo.model}
+                    onChange={(e) => setVehicleInfo({...vehicleInfo, model: e.target.value})}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                    placeholder="Suzuki Carry"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Color</label>
+                  <input
+                    type="text"
+                    value={vehicleInfo.color}
+                    onChange={(e) => setVehicleInfo({...vehicleInfo, color: e.target.value})}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                    placeholder="White"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                <div className="flex items-center gap-2 text-orange-600 mb-2">
+                  <CreditCard className="w-4 h-4" />
+                  <span className="text-xs font-bold">Payout Account</span>
+                </div>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={bankAccount.bankName}
+                    onChange={(e) => setBankAccount({...bankAccount, bankName: e.target.value})}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-100 outline-none"
+                    placeholder="Bank Name (e.g. CRDB, NMB)"
+                    required
+                  />
+                  <input
+                    type="text"
+                    value={bankAccount.accountNumber}
+                    onChange={(e) => setBankAccount({...bankAccount, accountNumber: e.target.value})}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-100 outline-none"
+                    placeholder="Account Number"
+                    required
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-2 italic">This account will be charged if reported for theft or lost goods.</p>
               </div>
             </div>
           )}
@@ -1259,6 +1695,14 @@ const ProductForm = ({
     setFormData(prev => {
       const newVariations = [...(prev.variations || [])];
       newVariations[vIndex].options[oIndex] = { ...newVariations[vIndex].options[oIndex], name };
+      return { ...prev, variations: newVariations };
+    });
+  };
+
+  const updateOptionPriceModifier = (vIndex: number, oIndex: number, priceModifier: number) => {
+    setFormData(prev => {
+      const newVariations = [...(prev.variations || [])];
+      newVariations[vIndex].options[oIndex] = { ...newVariations[vIndex].options[oIndex], priceModifier };
       return { ...prev, variations: newVariations };
     });
   };
@@ -1506,8 +1950,20 @@ const ProductForm = ({
                               value={option.name}
                               onChange={(e) => updateOptionName(vIndex, oIndex, e.target.value)}
                               placeholder="Option name (e.g. Red, Large)"
-                              className="flex-1 bg-transparent border-none outline-none text-sm"
+                              className="flex-1 bg-transparent border-none outline-none text-sm min-w-0"
                             />
+                            <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 shrink-0">
+                               <Plus className="w-2.5 h-2.5 text-indigo-500" />
+                               <input 
+                                 type="number"
+                                 step="0.01"
+                                 value={option.priceModifier || 0}
+                                 onChange={(e) => updateOptionPriceModifier(vIndex, oIndex, parseFloat(e.target.value) || 0)}
+                                 className="w-16 bg-transparent border-none outline-none text-[10px] font-bold text-gray-900"
+                                 placeholder="Price +"
+                               />
+                               <span className="text-[9px] font-bold text-gray-400">{formData.sourceCurrency}</span>
+                            </div>
                             <button
                               type="button"
                               onClick={() => removeOption(vIndex, oIndex)}
@@ -1558,6 +2014,311 @@ const ProductForm = ({
         </form>
       </motion.div>
     </motion.div>
+  );
+};
+
+const OrderStatusTracker = ({ order }: { order: Order }) => {
+  const stages = [
+    { key: 'paid', label: 'Processing', icon: Clock },
+    { key: 'shipped', label: 'Shipped', icon: Plane },
+    { key: 'picked_up', label: 'Out for Delivery', icon: Truck },
+    { key: 'delivered', label: 'Delivered', icon: CheckCircle2 },
+  ];
+
+  const currentStatus = order.status;
+  const statusHistory = order.automationLog || [];
+
+  const getStageStatus = (stageKey: string) => {
+    const statusOrder = ['pending', 'paid', 'fulfilled', 'shipped', 'awaiting_pickup', 'picked_up', 'delivered'];
+    const currentIndex = statusOrder.indexOf(currentStatus === 'reported' ? 'picked_up' : currentStatus);
+    const stageIndex = statusOrder.indexOf(stageKey);
+
+    if (currentStatus === 'delivered' && stageKey === 'delivered') return 'completed';
+    if (stageIndex < currentIndex) return 'completed';
+    if (stageKey === currentStatus || (stageKey === 'paid' && currentStatus === 'fulfilled') || (stageKey === 'picked_up' && currentStatus === 'shipped' && order.deliveryDetails?.driverId)) return 'current';
+    return 'pending';
+  };
+
+  const getStageDate = (stageKey: string) => {
+    if (stageKey === 'paid' && order.createdAt) return new Date(order.createdAt).toLocaleDateString();
+    if (stageKey === 'shipped' && order.fulfillmentDetails?.shippedAt) return new Date(order.fulfillmentDetails.shippedAt).toLocaleDateString();
+    if (stageKey === 'picked_up' && order.deliveryDetails?.pickedUpAt) return new Date(order.deliveryDetails.pickedUpAt).toLocaleDateString();
+    if (stageKey === 'delivered' && order.deliveryDetails?.deliveredAt) return new Date(order.deliveryDetails.deliveredAt).toLocaleDateString();
+    return null;
+  };
+
+  return (
+    <div className="relative flex justify-between w-full mt-8 mb-12 px-2">
+      {/* Background Line */}
+      <div className="absolute top-5 left-0 w-full h-0.5 bg-gray-100 -z-10" />
+      
+      {stages.map((stage, i) => {
+        const state = getStageStatus(stage.key);
+        const date = getStageDate(stage.key);
+        const Icon = stage.icon;
+
+        return (
+          <div key={i} className="flex flex-col items-center gap-2 relative">
+            <div className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500",
+              state === 'completed' ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-100" :
+              state === 'current' ? "bg-white border-indigo-600 text-indigo-600 shadow-lg shadow-indigo-100 animate-pulse" :
+              "bg-white border-gray-200 text-gray-300"
+            )}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <div className="text-center min-w-[80px]">
+              <div className={cn(
+                "text-[10px] font-bold uppercase tracking-wider mb-0.5",
+                state === 'completed' ? "text-green-600" : state === 'current' ? "text-indigo-600" : "text-gray-400"
+              )}>
+                {stage.label}
+              </div>
+              {date && (
+                <div className="text-[9px] text-gray-400 font-medium">{date}</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const CustomerDashboard = ({ 
+  user, 
+  orders, 
+  currency, 
+  rates,
+  reportDriver,
+  releaseFunds,
+  updateOrder,
+  isInstallable,
+  installApp
+}: { 
+  user: User | null; 
+  orders: Order[];
+  currency: string;
+  rates: ExchangeRates;
+  reportDriver: (orderId: string, notes: string) => Promise<void>;
+  releaseFunds: (orderId: string) => Promise<void>;
+  updateOrder: (orderId: string, data: Partial<Order>) => Promise<void>;
+  isInstallable?: boolean;
+  installApp?: () => Promise<void>;
+}) => {
+  const [viewingPoliceReport, setViewingPoliceReport] = useState<Order | null>(null);
+  const [scanningForOrder, setScanningForOrder] = useState<Order | null>(null);
+  const myOrders = orders.filter(o => o.buyerId === user?.uid);
+
+  const handleScan = (data: string) => {
+    try {
+      const parsed = JSON.parse(data);
+      if (scanningForOrder && parsed.orderId === scanningForOrder.id && parsed.code === scanningForOrder.confirmationCode) {
+        setScanningForOrder(null);
+        releaseFunds(scanningForOrder.id);
+      } else {
+        alert("Invalid QR code or wrong order. Please try again.");
+      }
+    } catch (e) {
+      // If it's not JSON, maybe it's just the manual code
+      if (scanningForOrder && data === scanningForOrder.confirmationCode) {
+        setScanningForOrder(null);
+        releaseFunds(scanningForOrder.id);
+      } else {
+        alert("Verification failed. Please ensure you scan the driver's QR code.");
+      }
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-12 pb-32 sm:pb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-12">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-2">My Orders</h1>
+          <p className="text-gray-500">Track your deliveries and manage your purchases.</p>
+        </div>
+
+        {isInstallable && (
+          <button 
+            onClick={installApp}
+            className="flex items-center gap-3 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-gray-900 transition-all active:scale-95 text-sm"
+          >
+            <Smartphone className="w-5 h-5" />
+            Install App
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        {myOrders.length === 0 ? (
+          <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+            <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 font-medium">You haven't placed any orders yet.</p>
+            <Link to="/" className="text-indigo-600 font-bold mt-4 inline-block">Start Shopping</Link>
+          </div>
+        ) : (
+          myOrders.map(order => (
+            <div key={order.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-50 bg-gray-50/50 flex flex-col sm:flex-row justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm text-indigo-600">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Order ID</div>
+                    <div className="font-mono text-sm font-bold text-gray-900">{order.id}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Placed On</div>
+                    <div className="text-sm font-bold text-gray-900">{new Date(order.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Total</div>
+                    <div className="text-sm font-bold text-indigo-600">{formatPrice(order.total, order.currency, rates)}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <OrderStatusTracker order={order} />
+
+                <div className="flex flex-col md:flex-row gap-8">
+                  <div className="flex-1 space-y-4">
+                    <h3 className="font-bold text-gray-900">Items</h3>
+                    <div className="space-y-3">
+                      {order.items.map((item, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <img src={item.image} className="w-12 h-12 rounded-lg object-cover" referrerPolicy="no-referrer" />
+                          <div>
+                            <div className="text-sm font-bold text-gray-900">{item.title}</div>
+                            <div className="text-xs text-gray-500">Qty: {item.quantity}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-4">
+                    <h3 className="font-bold text-gray-900">Delivery Status</h3>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-4 h-4 rounded-full flex items-center justify-center",
+                          order.status === 'delivered' ? "bg-green-100 text-green-600" : "bg-indigo-100 text-indigo-600 animate-pulse"
+                        )}>
+                          {order.status === 'delivered' ? <Check className="w-2 h-2" /> : <div className="w-1.5 h-1.5 rounded-full bg-current" />}
+                        </div>
+                        <span className="text-sm font-bold capitalize">{order.status.replace('_', ' ')}</span>
+                      </div>
+
+                      {order.status === 'awaiting_payment' && (
+                        <div className="bg-yellow-50 p-6 rounded-3xl border border-yellow-100 space-y-4">
+                          <div className="flex justify-between items-center pb-3 border-b border-yellow-200/50">
+                            <span className="text-xs font-bold text-yellow-700 uppercase tracking-widest">Delivery Fee</span>
+                            <span className="text-sm font-black text-gray-900">{formatPrice(order.deliveryDetails?.deliveryFee || 0, 'TZS', rates, 'TZS')}</span>
+                          </div>
+                          <div className="flex justify-between items-center font-black text-lg">
+                            <span className="text-[10px] text-gray-500 uppercase">Final Total</span>
+                            <span className="text-indigo-600">{formatPrice(order.total, order.currency, rates)}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              updateOrder(order.id, {
+                                status: 'paid',
+                                automationLog: [
+                                  ...(order.automationLog || []),
+                                  `[FINANCE] Customer approved delivery quote. Payment confirmed.`,
+                                  `[SYSTEM] Funds moving to Escrow holding unit (DigiPesa).`
+                                ]
+                              });
+                              alert("Payment confirmed! The driver has been notified to proceed with the delivery.");
+                            }}
+                            className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-xl shadow-gray-200"
+                          >
+                            Approve & Pay Bill
+                          </button>
+                          <p className="text-[9px] text-yellow-600 text-center italic">Calculated based on {order.deliveryDetails?.distanceKm?.toFixed(1)}km distance from driver to store to your location.</p>
+                        </div>
+                      )}
+
+                      {order.deliveryDetails?.driverName && (
+                        <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
+                          <div className="flex items-center gap-3 mb-2">
+                             <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-indigo-600">
+                               <Truck className="w-4 h-4" />
+                             </div>
+                             <div>
+                               <div className="text-[10px] font-bold text-indigo-500 uppercase">Your Driver</div>
+                               <div className="text-sm font-bold text-indigo-900">{order.deliveryDetails.driverName}</div>
+                             </div>
+                          </div>
+                          {(order.status === 'shipped' || order.status === 'picked_up') && (
+                            <div className="space-y-4">
+                              {order.status === 'picked_up' && (
+                                <button
+                                  onClick={() => setScanningForOrder(order)}
+                                  className="w-full bg-green-600 text-white py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-100 ring-2 ring-green-50"
+                                >
+                                  <ShieldCheck className="w-4 h-4" />
+                                  Scan Driver QR to Confirm
+                                </button>
+                              )}
+                              
+                              <button 
+                                onClick={() => {
+                                  const notes = prompt("Describe the delivery issue (e.g., driver reached destination but goods missing):");
+                                  if (notes) reportDriver(order.id, notes);
+                                }}
+                                className="w-full bg-red-50 text-red-600 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-100 transition-all flex items-center justify-center gap-2"
+                              >
+                                <ShieldCheck className="w-3 h-3" />
+                                Report Theft / Loss
+                              </button>
+                            </div>
+                          )}
+                          {order.status === 'reported' && (
+                            <div className="mt-4 p-3 bg-red-100 rounded-xl border border-red-200">
+                              <div className="flex items-center gap-2 text-red-600 font-bold text-xs uppercase mb-1">
+                                <AlertCircle className="w-3 h-3" /> Reported to Police
+                              </div>
+                              <p className="text-[9px] text-red-500 leading-tight">Authorities have been notified with driver NIDA & Vehicle records. Penalty applied.</p>
+                              <button 
+                                onClick={() => setViewingPoliceReport(order)}
+                                className="mt-2 w-full text-[9px] font-bold bg-red-600 text-white py-1.5 rounded-lg flex items-center justify-center gap-1"
+                              >
+                                <ShieldCheck className="w-3 h-3" /> View Incident Report
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {viewingPoliceReport && (
+        <PoliceReportModal 
+          order={viewingPoliceReport}
+          onClose={() => setViewingPoliceReport(null)}
+          currency={currency}
+          rates={rates}
+        />
+      )}
+
+      {scanningForOrder && (
+        <QRScannerModal 
+          onScan={handleScan}
+          onClose={() => setScanningForOrder(null)}
+        />
+      )}
+    </div>
   );
 };
 
@@ -1739,20 +2500,23 @@ const Navbar = ({
   cart, 
   isAdmin, 
   isSeller,
+  isDriver,
   currency, 
   setCurrency, 
   rates,
-  user
+  user,
+  setShowAuthModal
 }: { 
   cart: CartItem[]; 
   isAdmin: boolean;
   isSeller: boolean;
+  isDriver: boolean;
   currency: string;
   setCurrency: (c: string) => void;
   rates: ExchangeRates;
   user: User | null;
+  setShowAuthModal: (show: boolean) => void;
 }) => {
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [isCartHovered, setIsCartHovered] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
@@ -1811,10 +2575,31 @@ const Navbar = ({
               <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Merchant Portal</Link>
             )}
 
+            {isDriver && (
+              <Link to="/driver" className="text-sm font-medium text-green-600 hover:text-green-700 transition-colors flex items-center gap-1">
+                <Truck className="w-4 h-4" />
+                Driver Portal
+              </Link>
+            )}
+
             {isSeller && (
               <Link to="/seller" className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1">
                 <Store className="w-4 h-4" />
                 Seller Dashboard
+              </Link>
+            )}
+
+            {user && (
+              <Link to="/referrals" className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1">
+                <Gift className="w-4 h-4" />
+                Invite & Earn
+              </Link>
+            )}
+
+            {user && (
+              <Link to="/dashboard" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors flex items-center gap-1">
+                <Package className="w-4 h-4" />
+                My Orders
               </Link>
             )}
 
@@ -2006,10 +2791,31 @@ const Navbar = ({
                   <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-gray-900 hover:text-indigo-600">Merchant Portal</Link>
                 )}
 
+                {isDriver && (
+                  <Link to="/driver" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-green-600 hover:text-green-700 flex items-center gap-2">
+                    <Truck className="w-5 h-5" />
+                    Driver Portal
+                  </Link>
+                )}
+
                 {isSeller && (
                   <Link to="/seller" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
                     <Store className="w-5 h-5" />
                     Seller Dashboard
+                  </Link>
+                )}
+
+                {user && (
+                  <Link to="/referrals" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
+                    <Gift className="w-5 h-5" />
+                    Invite & Earn
+                  </Link>
+                )}
+
+                {user && (
+                  <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Package className="w-5 h-5" />
+                    My Orders
                   </Link>
                 )}
 
@@ -2073,15 +2879,6 @@ const Navbar = ({
               </div>
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showAuthModal && (
-          <AuthModal 
-            onClose={() => setShowAuthModal(false)} 
-            onSuccess={() => setShowAuthModal(false)} 
-          />
         )}
       </AnimatePresence>
     </nav>
@@ -2286,7 +3083,9 @@ const Storefront = ({
   currency, 
   rates,
   isAdmin,
-  user
+  user,
+  isInstallable,
+  installApp
 }: { 
   products: Product[]; 
   addToCart: (p: Product, selectedVariations?: { [key: string]: string }) => void;
@@ -2294,6 +3093,8 @@ const Storefront = ({
   rates: ExchangeRates;
   isAdmin: boolean;
   user: User | null;
+  isInstallable: boolean;
+  installApp: () => void;
 }) => {
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -2420,6 +3221,15 @@ const Storefront = ({
                 >
                   Shop Now
                 </button>
+                {isInstallable && (
+                  <button 
+                    onClick={installApp}
+                    className="w-full sm:w-auto rounded-xl bg-white text-indigo-600 px-8 py-4 text-sm font-bold border-2 border-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100"
+                  >
+                    <Smartphone className="w-5 h-5" />
+                    Download App
+                  </button>
+                )}
                 <Link to="/admin" className="text-sm font-bold leading-6 text-white hover:text-indigo-400 transition-colors flex items-center gap-2">
                   Become a Seller <ChevronRight className="w-4 h-4" />
                 </Link>
@@ -2451,6 +3261,30 @@ const Storefront = ({
       </section>
 
       <div id="products-grid" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {isInstallable && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-4 bg-indigo-600 rounded-3xl text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
+                <Smartphone className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm">Download Our Official App</h4>
+                <p className="text-[10px] opacity-80">Get the best shopping experience directly on your home screen.</p>
+              </div>
+            </div>
+            <button 
+              onClick={installApp}
+              className="w-full sm:w-auto px-6 py-2 bg-white text-indigo-600 rounded-xl font-bold text-xs hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Install Now
+            </button>
+          </motion.div>
+        )}
         <header className="mb-12">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-8">
             <div>
@@ -2775,6 +3609,623 @@ const Storefront = ({
     </div>
   );
 };
+const ReferralDashboard = ({
+  user,
+  currency,
+  rates
+}: {
+  user: User | null;
+  currency: string;
+  rates: ExchangeRates;
+}) => {
+  const [referrals, setReferrals] = useState<{ id: string; role: string; email: string; createdAt: string }[]>([]);
+  const [earnings, setEarnings] = useState<{ amount: number; type: string; orderId: string; createdAt: string }[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen to user profile for earnings balance
+    const unsubProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setProfile(docSnap.data() as UserProfile);
+      }
+    });
+
+    // Listen to people referred by this user
+    const qUsers = query(collection(db, 'users'), where('referredBy', '==', user.uid));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+      setReferrals(snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        role: doc.data().role, 
+        email: doc.data().email, 
+        createdAt: doc.data().createdAt 
+      })));
+    });
+
+    // Listen to referral earnings
+    const qEarnings = query(collection(db, 'referral_earnings'), where('referrerId', '==', user.uid), orderBy('createdAt', 'desc'));
+    const unsubEarnings = onSnapshot(qEarnings, (snapshot) => {
+      setEarnings(snapshot.docs.map(doc => ({ 
+        amount: doc.data().amount, 
+        type: doc.data().type, 
+        orderId: doc.data().orderId, 
+        createdAt: doc.data().createdAt 
+      })));
+    });
+
+    return () => {
+      unsubProfile();
+      unsubUsers();
+      unsubEarnings();
+    };
+  }, [user]);
+
+  const referralLink = `${window.location.origin}/?ref=${user?.uid || ''}`;
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(referralLink);
+    alert("Referral link copied to clipboard!");
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+      <div className="flex flex-col md:flex-row gap-8 mb-12">
+        <div className="flex-1 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-8 text-white shadow-xl">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md">
+              <Gift className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Invite & Earn</h1>
+              <p className="text-indigo-100 text-sm opacity-80 text-left">Share your link and earn 3% commission.</p>
+            </div>
+          </div>
+          
+          <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-md border border-white/20 mb-8">
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-indigo-200 mb-3 text-left">Your Referral Link</label>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                readOnly 
+                value={referralLink} 
+                className="flex-1 bg-black/20 border-none rounded-xl px-4 py-3 text-sm outline-none font-mono"
+              />
+              <button 
+                onClick={copyLink}
+                className="bg-white text-indigo-600 p-3 rounded-xl hover:bg-indigo-50 transition-all shadow-lg"
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <div className="text-[10px] font-bold uppercase opacity-60 mb-1 text-left">Total Earnings</div>
+              <div className="text-2xl font-bold text-left">{formatPrice(profile?.referralEarnings || 0, currency, rates, 'USD')}</div>
+            </div>
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <div className="text-[10px] font-bold uppercase opacity-60 mb-1 text-left">Total Referrals</div>
+              <div className="text-2xl font-bold text-left">{referrals.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full md:w-80 bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-900 mb-6">How it works</h3>
+          <div className="space-y-6">
+            {[
+              { icon: LinkIcon, title: "Share Link", desc: "Send your personal link to friends or business partners." },
+              { icon: UserPlus, title: "They Join", desc: "Invitees register as a Seller, Driver, or Buyer." },
+              { icon: TrendingUp, title: "You Earn", desc: "Get 3% of their income every time they make a sale or delivery." }
+            ].map((step, i) => (
+              <div key={i} className="flex gap-4">
+                <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                  <step.icon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 mb-1 text-left">{step.title}</h4>
+                  <p className="text-xs text-gray-500 leading-relaxed text-left">{step.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <div>
+          <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-green-500" />
+            Earning History
+          </h3>
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            {earnings.length === 0 ? (
+              <div className="p-12 text-center">
+                <p className="text-gray-400 italic text-sm">No earnings recorded yet.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {earnings.map((earning, i) => (
+                  <div key={i} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-green-50 text-green-600 flex items-center justify-center">
+                        <DollarSign className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-900">
+                          {earning.type === 'seller_sale' ? 'Seller Sale Comm.' : 'Driver Delivery Comm.'}
+                        </div>
+                        <div className="text-[10px] text-gray-400 uppercase tracking-widest">Order #{earning.orderId.slice(0, 8)}</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-green-600">+{formatPrice(earning.amount, currency, rates, 'USD')}</div>
+                      <div className="text-[9px] text-gray-400">{new Date(earning.createdAt).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <Users className="w-5 h-5 text-indigo-500" />
+            Your Referrals
+          </h3>
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            {referrals.length === 0 ? (
+              <div className="p-12 text-center">
+                <p className="text-gray-400 italic text-sm">You haven't referred anyone yet.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {referrals.map((ref, i) => (
+                  <div key={i} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                        {ref.email[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-900">{ref.email}</div>
+                        <div className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">{ref.role}</div>
+                      </div>
+                    </div>
+                    <div className="text-right text-[10px] text-gray-400">
+                      Joined {new Date(ref.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DriverDashboard = ({
+  user,
+  orders,
+  updateOrder,
+  currency,
+  rates,
+  awardReferralCommission
+}: {
+  user: User | null;
+  orders: Order[];
+  updateOrder: (id: string, data: Partial<Order>) => Promise<void>;
+  currency: string;
+  rates: ExchangeRates;
+  awardReferralCommission: (referrerId: string, inviteeId: string, inviteeRole: string, orderId: string, income: number, type: 'seller_sale' | 'driver_delivery') => Promise<void>;
+}) => {
+  const [activeTab, setActiveTab] = useState<'available' | 'active' | 'history'>('available');
+  const [viewingQR, setViewingQR] = useState<Order | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setProfile(docSnap.data() as UserProfile);
+      }
+    });
+    return () => unsub();
+  }, [user]);
+
+  const availableOrders = orders.filter(o => o.status === 'pending');
+  const myActiveOrders = orders.filter(o => 
+    o.deliveryDetails?.driverId === user?.uid && 
+    (o.status === 'awaiting_payment' || o.status === 'paid' || o.status === 'shipped' || o.status === 'picked_up' || o.status === 'reported' || o.status === 'awaiting_pickup' || o.status === 'fulfilled')
+  );
+  const myHistory = orders.filter(o => 
+    o.deliveryDetails?.driverId === user?.uid && 
+    o.status === 'delivered'
+  );
+
+  const handleAcceptJob = async (orderId: string) => {
+    if (!user) return;
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    // 1. Get coordinates from profile
+    let driverLat = -6.7924; // Default Oysterbay
+    let driverLng = 39.2721;
+    
+    try {
+      const profileDoc = await getDoc(doc(db, 'users', user.uid));
+      if (profileDoc.exists()) {
+        const profileData = profileDoc.data() as UserProfile;
+        if (profileData.location) {
+          driverLat = profileData.location.lat;
+          driverLng = profileData.location.lng;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch driver profile for location:", e);
+    }
+    
+    // Store Location (Kariakoo as default hub)
+    const storeLat = -6.8183;
+    const storeLng = 39.2789;
+
+    const customerLat = order.customer.lat || -6.8235; // Default Posta
+    const customerLng = order.customer.lng || 39.2848;
+
+    // 2. Calculate Distances
+    const distToStore = getDistance(driverLat, driverLng, storeLat, storeLng);
+    const distToCustomer = getDistance(storeLat, storeLng, customerLat, customerLng);
+    const totalDist = distToStore + distToCustomer;
+
+    // 3. Calculate Fee
+    const deliveryFee = calculateDeliveryFee(totalDist);
+
+    await updateOrder(orderId, {
+      status: 'awaiting_payment',
+      total: order.total + (deliveryFee / (rates[order.currency] || 1)), // Add fee to total in USD base then back
+      deliveryDetails: {
+        driverId: user.uid,
+        driverName: user.displayName || user.email || 'Driver',
+        offeredAt: new Date().toISOString(),
+        acceptedAt: new Date().toISOString(),
+        pickupLocation: 'Main Distribution Hub (Kariakoo)',
+        startLat: driverLat,
+        startLng: driverLng,
+        pickupLat: storeLat,
+        pickupLng: storeLng,
+        dropoffLat: customerLat,
+        dropoffLng: customerLng,
+        distanceKm: totalDist,
+        deliveryFee: deliveryFee
+      },
+      automationLog: [
+        ...(order.automationLog || []),
+        `[DRIVER] Offer accepted by ${user.displayName}.`,
+        `[ROUTING] Route calculated: Driver -> Hub (${distToStore.toFixed(1)}km) -> Customer (${distToCustomer.toFixed(1)}km).`,
+        `[ROUTING] Total distance: ${totalDist.toFixed(1)}km.`,
+        `[FINANCE] Delivery fee calculated: ${formatPrice(deliveryFee, 'TZS', rates, 'TZS')}. New total pending customer approval.`
+      ]
+    });
+    alert("Delivery offer accepted! Delivery fee calculated and sent to customer for payment.");
+  };
+
+  const handlePickup = async (orderId: string) => {
+    const confirmationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    await updateOrder(orderId, {
+      status: 'picked_up',
+      confirmationCode: confirmationCode,
+      deliveryDetails: {
+        pickedUpAt: new Date().toISOString()
+      },
+      automationLog: [
+        ...(orders.find(o => o.id === orderId)?.automationLog || []),
+        `[DRIVER] Order picked up. Confirmation code ${confirmationCode} generated.`
+      ]
+    });
+  };
+
+  const handleDelivery = async (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || !user) return;
+
+    await updateOrder(orderId, {
+      status: 'delivered',
+      deliveryDetails: {
+        ...order.deliveryDetails,
+        deliveredAt: new Date().toISOString()
+      },
+      automationLog: [
+        ...(order.automationLog || []),
+        `[DRIVER] Delivery confirmed by ${user.displayName || user.email}.`
+      ]
+    });
+
+    // Award referral commission to the driver's referrer
+    const driverDoc = await getDoc(doc(db, 'users', user.uid));
+    if (driverDoc.exists()) {
+      const driverData = driverDoc.data();
+      if (driverData.referredBy) {
+        // Driver earning is 5% of order total
+        const driverEarning = order.total * 0.05;
+        await awardReferralCommission(driverData.referredBy, user.uid, 'driver', order.id, driverEarning, 'driver_delivery');
+      }
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Driver Portal</h1>
+          <p className="text-sm text-gray-500">Pick up and deliver goods to earn money.</p>
+        </div>
+        <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
+          {(['available', 'active', 'history'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-bold transition-all capitalize",
+                activeTab === t ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500"
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+        <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-6 text-white shadow-xl shadow-indigo-100">
+          <div className="flex justify-between items-start mb-4">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
+              <DollarSign className="w-5 h-5 text-white" />
+            </div>
+            {profile?.walletBalance !== undefined && profile.walletBalance < 0 && (
+              <span className="bg-red-500 text-[8px] font-bold px-2 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 animate-pulse">
+                <AlertCircle className="w-2 h-2" /> Penalty Active
+              </span>
+            )}
+          </div>
+          <div className="text-3xl font-bold mb-1">
+            {formatPrice(profile?.walletBalance || 0, currency, rates)}
+          </div>
+          <p className="text-indigo-100 text-[10px] font-bold uppercase tracking-widest opacity-80">Available Units</p>
+        </div>
+        
+        {profile?.vehicleInfo && (
+          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-indigo-600">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-gray-900">{profile.vehicleInfo.plateNumber}</div>
+                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{profile.vehicleInfo.model} ({profile.vehicleInfo.color})</div>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-gray-50 flex justify-between">
+              <div className="text-[10px] font-bold text-green-600 uppercase">Verified Driver</div>
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">NIDA: {profile.nationalId?.slice(0, 4)}...</div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+              <History className="w-5 h-5" />
+            </div>
+            <div className="text-sm font-bold text-gray-900">Performance</div>
+          </div>
+          <div className="flex gap-4">
+            <div>
+              <div className="text-lg font-bold text-gray-900">{myHistory.length}</div>
+              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Success</div>
+            </div>
+            <div className="w-px h-8 bg-gray-100" />
+            <div>
+              <div className="text-lg font-bold text-red-500">
+                {orders.filter(o => o.deliveryDetails?.driverId === user?.uid && o.status === 'reported').length}
+              </div>
+              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Disputes</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {activeTab === 'available' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {availableOrders.filter(o => !o.deliveryDetails?.driverId).length === 0 ? (
+              <div className="col-span-full text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 font-medium">No available delivery offers nearby.</p>
+              </div>
+            ) : (
+              availableOrders.filter(o => !o.deliveryDetails?.driverId).map(order => (
+                <div key={order.id} className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:border-indigo-300 transition-all group">
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">New Delivery Offer</div>
+                      <h3 className="text-lg font-bold text-gray-900">Kariakoo Distribution</h3>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-bold text-green-600">{formatPrice(order.total * 0.05, currency, rates)}</div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Earning</div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4 mb-8">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-600 shrink-0">
+                        <Package className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase">Pickup From</div>
+                        <div className="text-sm font-bold text-gray-900">Main Hub, Block A</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase">Deliver To</div>
+                        <div className="text-sm font-bold text-gray-900 line-clamp-1">{order.customer.city}, {order.customer.address}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => handleAcceptJob(order.id)}
+                    className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
+                  >
+                    Accept Offer
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'active' && (
+          <div className="space-y-6">
+             {myActiveOrders.length === 0 ? (
+               <div className="text-center py-20 bg-gray-50 rounded-3xl">
+                 <Truck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                 <p className="text-gray-500">You have no active deliveries.</p>
+               </div>
+             ) : (
+               myActiveOrders.map(order => (
+                 <div key={order.id} className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 shadow-xl overflow-hidden relative">
+                   <div className="sm:absolute top-4 right-8 mb-4 sm:mb-0">
+                      <div className={cn(
+                        "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest w-fit",
+                        order.status === 'awaiting_payment' ? "bg-yellow-100 text-yellow-600 animate-pulse" :
+                        order.status === 'awaiting_pickup' ? "bg-orange-100 text-orange-600" : "bg-blue-100 text-blue-600 font-bold"
+                      )}>
+                        {order.status === 'awaiting_payment' ? 'Awaiting Payment' :
+                         order.status === 'awaiting_pickup' ? 'Awaiting Pickup' : 'Out for Delivery'}
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                     <div>
+                       <h3 className="text-xl font-bold text-gray-900 mb-6">Delivery Path</h3>
+                       <div className="space-y-8 relative">
+                         <div className="absolute left-[15px] top-4 bottom-4 w-0.5 border-l-2 border-dashed border-gray-100"></div>
+                         
+                         <div className="flex gap-4 relative">
+                            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center z-10 font-bold text-xs ring-4 ring-white">1</div>
+                            <div>
+                              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 text-left">Pickup Information</div>
+                              <p className="font-bold text-gray-900 text-left">Distribution Hub</p>
+                              <p className="text-xs text-gray-500 text-left">Shop 42, Floor 1, Kariakoo</p>
+                            </div>
+                         </div>
+
+                         <div className="flex gap-4 relative">
+                            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center z-10 font-bold text-xs ring-4 ring-white">2</div>
+                            <div>
+                              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 text-left">Customer Destination</div>
+                              <p className="font-bold text-gray-900 text-left">{order.customer.name}</p>
+                              <p className="text-xs text-gray-500 text-left">{order.customer.phone}</p>
+                              <p className="text-xs text-indigo-600 mt-2 bg-indigo-50 p-3 rounded-xl border border-indigo-100 text-left">{order.customer.address}, {order.customer.city}</p>
+                            </div>
+                         </div>
+                       </div>
+                     </div>
+
+                     <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 flex flex-col justify-between">
+                       <div>
+                         <h4 className="text-sm font-bold text-gray-900 mb-4">Items to Deliver</h4>
+                         <div className="space-y-2">
+                           {order.items.map((item, i) => (
+                             <div key={i} className="flex justify-between text-xs">
+                               <span className="text-gray-600">{item.quantity}x {item.title}</span>
+                             </div>
+                           ))}
+                         </div>
+                       </div>
+
+                       <div className="mt-8 space-y-4">
+                         { (order.status === 'awaiting_pickup' || order.status === 'paid' || order.status === 'shipped' || order.status === 'fulfilled' ) ? (
+                           <button 
+                             onClick={() => handlePickup(order.id)}
+                             className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold hover:bg-orange-600 transition-all flex items-center justify-center gap-2"
+                           >
+                             Confirm Pickup
+                           </button>
+                         ) : order.status === 'awaiting_payment' ? (
+                            <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 text-center w-full">
+                              <p className="text-[10px] font-bold text-yellow-600 uppercase tracking-widest mb-1">Awaiting Payment</p>
+                              <p className="text-[9px] text-gray-500">Wait for customer to approve the {formatPrice(order.deliveryDetails?.deliveryFee || 0, 'TZS', rates, 'TZS')} delivery fee.</p>
+                            </div>
+                         ) : (
+                           <button 
+                             onClick={() => setViewingQR(order)}
+                             className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                           >
+                             Show Confirmation QR
+                           </button>
+                         )}
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               ))
+             )}
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+           <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
+             <div className="overflow-x-auto">
+               <table className="w-full text-left">
+                 <thead className="bg-gray-50">
+                   <tr>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Order ID</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Date</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Customer</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Earning</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-100">
+                   {myHistory.map(order => (
+                     <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
+                       <td className="px-6 py-4 font-mono text-xs font-bold text-gray-400">#{order.id.slice(0, 8)}</td>
+                       <td className="px-6 py-4 text-xs text-gray-500">{new Date(order.deliveryDetails?.deliveredAt || order.createdAt).toLocaleDateString()}</td>
+                       <td className="px-6 py-4 text-xs font-bold text-gray-900">{order.customer.name}</td>
+                       <td className="px-6 py-4 text-xs font-bold text-green-600 text-right">{formatPrice(order.total * 0.05, currency, rates)}</td>
+                     </tr>
+                   ))}
+                   {myHistory.length === 0 && (
+                     <tr>
+                       <td colSpan={4} className="px-6 py-12 text-center text-gray-400 italic text-sm">No completed deliveries yet.</td>
+                     </tr>
+                   )}
+                 </tbody>
+               </table>
+             </div>
+           </div>
+        )}
+      </div>
+
+      {viewingQR && (
+        <ConfirmationQRModal 
+          order={viewingQR}
+          onClose={() => setViewingQR(null)}
+        />
+      )}
+    </div>
+  );
+};
+
 const AdminPanel = ({ 
   products, 
   addProduct,
@@ -2785,7 +4236,8 @@ const AdminPanel = ({
   currency, 
   rates,
   user,
-  isAdmin
+  isAdmin,
+  reportDriver
 }: { 
   products: Product[]; 
   addProduct: (p: Product) => Promise<void>;
@@ -2797,7 +4249,9 @@ const AdminPanel = ({
   rates: ExchangeRates;
   user: User | null;
   isAdmin: boolean;
+  reportDriver: (orderId: string, notes: string) => Promise<void>;
 }) => {
+  const [viewingPoliceReport, setViewingPoliceReport] = useState<Order | null>(null);
   const [url, setUrl] = useState('');
   const [bulkUrls, setBulkUrls] = useState('');
   const [isBulk, setIsBulk] = useState(false);
@@ -4217,6 +5671,32 @@ const AdminPanel = ({
                               Cancel Order
                             </button>
                           )}
+                          {order.deliveryDetails?.driverId && (order.status === 'shipped' || order.status === 'picked_up') && (
+                            <button 
+                              onClick={() => {
+                                const notes = prompt("Describe what went wrong with the delivery:");
+                                if (notes) reportDriver(order.id, notes);
+                              }}
+                              className="flex items-center gap-1 text-[10px] font-bold text-red-600 hover:text-red-800 transition-colors uppercase tracking-widest bg-red-50 px-2 py-1 rounded-lg"
+                            >
+                              <ShieldCheck className="w-3 h-3" />
+                              Report Driver
+                            </button>
+                          )}
+                          {order.status === 'reported' && (
+                            <div className="bg-red-50 p-2 rounded-lg border border-red-100">
+                               <div className="text-[9px] font-bold text-red-600 uppercase tracking-tighter flex items-center gap-1">
+                                 <AlertCircle className="w-3 h-3" /> Driver Reported
+                               </div>
+                               <p className="text-[8px] text-red-500 italic mt-1 line-clamp-2">{order.disputeNotes}</p>
+                               <button 
+                                 onClick={() => setViewingPoliceReport(order)}
+                                 className="mt-2 w-full text-[8px] font-bold bg-gray-900 text-white py-1 rounded-md flex items-center justify-center gap-1"
+                               >
+                                 <ShieldCheck className="w-2 h-2" /> View Police Report
+                               </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -4613,6 +6093,15 @@ const AdminPanel = ({
         />
       )}
     </AnimatePresence>
+
+    {viewingPoliceReport && (
+      <PoliceReportModal 
+        order={viewingPoliceReport}
+        onClose={() => setViewingPoliceReport(null)}
+        currency={currency}
+        rates={rates}
+      />
+    )}
   </div>
   );
 };
@@ -4804,7 +6293,9 @@ const CartPage = ({
           address: streetAddress || result.display_name.split(',')[0],
           city: cityName,
           country: country || '',
-          zip: postcode || ''
+          zip: postcode || '',
+          lat: parseFloat(result.lat),
+          lng: parseFloat(result.lon)
         }));
         setShowLocationModal(false);
         setMapsLink('');
@@ -4838,7 +6329,9 @@ const CartPage = ({
               address: streetAddress || data.display_name.split(',')[0],
               city: cityName,
               country: country || '',
-              zip: postcode || ''
+              zip: postcode || '',
+              lat: latitude,
+              lng: longitude
             }));
           }
         } catch (error) {
@@ -4884,7 +6377,9 @@ const CartPage = ({
             address: streetAddress || geoData.display_name.split(',')[0],
             city: cityName,
             country: country || '',
-            zip: postcode || ''
+            zip: postcode || '',
+            lat: lat,
+            lng: lon
           }));
         }
       }
@@ -4945,11 +6440,11 @@ const CartPage = ({
           shippingCost: totalShippingCostUSD,
           profit: profitUSD,
           paymentMethod,
-          status: 'paid',
+          status: 'pending',
           automationStatus: 'idle',
           automationLog: [
-            `[SYSTEM] ${paymentMethod === 'mpesa' ? 'M-Pesa' : 'Bank Transfer'} payment confirmed. Total: ${formatPrice(totalUSD, 'USD', rates, 'USD')}. Funds held in Escrow.`,
-            `[SYSTEM] Source Cost ($${sourceCostUSD.toFixed(2)}) allocated to Fulfillment Bridge.`
+            `[SYSTEM] Order submitted. Waiting for a driver to accept and provide a delivery quote.`,
+            `[SYSTEM] Base total: ${formatPrice(totalUSD, 'USD', rates, 'USD')}. Delivery fee will be calculated based on your distance.`
           ],
           createdAt: new Date().toISOString(),
           currency
@@ -5010,20 +6505,25 @@ const CartPage = ({
                           </div>
                         )}
                         <p className="text-indigo-600 font-bold mb-4 text-sm sm:text-base">{formatPrice(item.price * (1 + item.markup / 100), currency, rates, item.sourceCurrency)}</p>
-                        <div className="flex items-center justify-between sm:justify-start gap-4">
-                          <select 
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const q = Number(e.target.value);
-                              setCart(prev => prev.map(i => i.cartId === item.cartId ? { ...i, quantity: q } : i));
-                            }}
-                            className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm outline-none font-bold"
-                          >
-                            {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
-                          </select>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center bg-gray-50 rounded-xl p-0.5 border border-gray-100">
+                            <button 
+                              onClick={() => setCart(prev => prev.map(i => i.cartId === item.cartId ? { ...i, quantity: Math.max(1, i.quantity - 1) } : i))}
+                              className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="w-8 text-center text-xs font-bold text-gray-900">{item.quantity}</span>
+                            <button 
+                              onClick={() => setCart(prev => prev.map(i => i.cartId === item.cartId ? { ...i, quantity: i.quantity + 1 } : i))}
+                              className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
                           <button 
                             onClick={() => setCart(prev => prev.filter(i => i.cartId !== item.cartId))}
-                            className="text-gray-400 hover:text-red-500 text-sm font-bold transition-colors"
+                            className="ml-4 text-gray-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-widest transition-colors"
                           >
                             Remove
                           </button>
@@ -5315,20 +6815,98 @@ const CartPage = ({
 
 // --- Main App ---
 
+const usePWA = () => {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const installApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstallable(false);
+    }
+  };
+
+  return { isInstallable, installApp };
+};
+
+const MobileNavigation = ({ user, cartCount, isInstallable, installApp }: { user: User | null; cartCount: number; isInstallable: boolean; installApp: () => void }) => {
+  const navigate = useNavigate();
+  return (
+    <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-100 px-3 py-3 pb-8 z-50 flex justify-between items-center safe-area-bottom">
+      <button onClick={() => navigate('/')} className="flex flex-col items-center gap-1 text-gray-400 hover:text-indigo-600 transition-all">
+        <Store className="w-5 h-5" />
+        <span className="text-[9px] font-bold uppercase tracking-tight">Shop</span>
+      </button>
+      <button onClick={() => navigate('/referrals')} className="flex flex-col items-center gap-1 text-gray-400 hover:text-indigo-600 transition-all">
+        <Users className="w-5 h-5" />
+        <span className="text-[9px] font-bold uppercase tracking-tight">Network</span>
+      </button>
+      <button onClick={() => navigate('/cart')} className="relative flex flex-col items-center gap-1 text-gray-400 hover:text-indigo-600 transition-all">
+        <div className="bg-indigo-600 text-white p-3 rounded-2xl -mt-8 shadow-lg shadow-indigo-200 border-4 border-white active:scale-95 transition-transform">
+          <ShoppingCart className="w-6 h-6" />
+        </div>
+        {cartCount > 0 && (
+          <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white translate-x-1/2 -translate-y-1/2">
+            {cartCount}
+          </span>
+        )}
+      </button>
+      <button onClick={() => navigate('/dashboard')} className="flex flex-col items-center gap-1 text-gray-400 hover:text-indigo-600 transition-all">
+        <Package className="w-5 h-5" />
+        <span className="text-[9px] font-bold uppercase tracking-tight">Orders</span>
+      </button>
+      {isInstallable ? (
+        <button onClick={installApp} className="flex flex-col items-center gap-1 text-indigo-600 animate-pulse transition-all">
+          <Smartphone className="w-5 h-5" />
+          <span className="text-[9px] font-bold uppercase tracking-tight">Install</span>
+        </button>
+      ) : (
+        <button onClick={() => navigate('/dashboard')} className="flex flex-col items-center gap-1 text-gray-400 hover:text-indigo-600 transition-all">
+          <UserIcon className="w-5 h-5" />
+          <span className="text-[9px] font-bold uppercase tracking-tight">Profile</span>
+        </button>
+      )}
+    </nav>
+  );
+};
+
 export default function App() {
+  const { isInstallable, installApp } = usePWA();
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSeller, setIsSeller] = useState(false);
+  const [isDriver, setIsDriver] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [currency, setCurrency] = useState(() => localStorage.getItem('preferred_currency') || 'TZS');
   const [rates, setRates] = useState<ExchangeRates>({ USD: 1, TZS: 2500 });
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('preferred_currency', currency);
   }, [currency]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get('ref');
+    if (ref) {
+      localStorage.setItem('referrer', ref);
+    }
+  }, []);
 
   useEffect(() => {
     const ratesRef = doc(db, 'settings', 'exchangeRates');
@@ -5403,14 +6981,17 @@ export default function App() {
               const userData = docSnap.data();
               setIsAdmin(userData.role === 'admin');
               setIsSeller(userData.role === 'seller' || userData.role === 'admin');
+              setIsDriver(userData.role === 'driver');
             } else {
               setIsAdmin(false);
               setIsSeller(false);
+              setIsDriver(false);
             }
           }, (error) => {
             console.error("Error listening to user role:", error);
             setIsAdmin(false);
             setIsSeller(false);
+            setIsDriver(false);
           });
         }
       } else {
@@ -5438,7 +7019,7 @@ export default function App() {
     });
 
     let unsubscribeOrders = () => {};
-    if (isSeller || isAdmin) {
+    if (isSeller || isAdmin || isDriver) {
       const ordersRef = collection(db, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
       unsubscribeOrders = onSnapshot(q, (snapshot) => {
@@ -5492,10 +7073,51 @@ export default function App() {
     });
   };
 
+  const awardReferralCommission = async (referrerId: string, inviteeId: string, inviteeRole: string, orderId: string, income: number, type: 'seller_sale' | 'driver_delivery') => {
+    const commission = income * 0.03;
+    if (commission <= 0) return;
+
+    try {
+      // 1. Record the earning
+      await addDoc(collection(db, 'referral_earnings'), {
+        referrerId,
+        inviteeId,
+        inviteeRole,
+        orderId,
+        amount: commission,
+        type,
+        createdAt: new Date().toISOString()
+      });
+
+      // 2. Update referrer's balance
+      const referrerRef = doc(db, 'users', referrerId);
+      await updateDoc(referrerRef, {
+        referralEarnings: increment(commission)
+      });
+    } catch (error) {
+      console.error("Error awarding referral commission:", error);
+    }
+  };
+
   const addOrder = async (order: Order) => {
     const path = `orders/${order.id}`;
     try {
       await setDoc(doc(db, 'orders', order.id), { ...order, currency });
+      
+      // Calculate referral commission for sellers
+      const sellers = new Set(order.items.map(i => i.sellerId).filter(Boolean));
+      for (const sellerId of sellers) {
+        if (!sellerId) continue;
+        const sellerDoc = await getDoc(doc(db, 'users', sellerId as string));
+        if (sellerDoc.exists()) {
+          const sellerData = sellerDoc.data();
+          if (sellerData.referredBy) {
+            const sellerItems = order.items.filter(i => i.sellerId === sellerId);
+            const sellerProfit = sellerItems.reduce((s, i) => s + (i.price * (i.markup / 100)) * i.quantity, 0);
+            await awardReferralCommission(sellerData.referredBy, sellerId as string, 'seller', order.id, sellerProfit, 'seller_sale');
+          }
+        }
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
     }
@@ -5537,6 +7159,131 @@ export default function App() {
     }
   }, []);
 
+  const reportDriver = async (orderId: string, notes: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || !order.deliveryDetails?.driverId) return;
+
+    const driverId = order.deliveryDetails.driverId;
+    const penaltyAmount = order.total * 1.02;
+
+    try {
+      // 1. Update order status
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'reported',
+        disputeNotes: notes,
+        disputePenaltyApplied: true,
+        automationLog: [
+          ...(order.automationLog || []),
+          `[DISPUTE] Reported by User. Driver penalized ${penaltyAmount.toLocaleString()} ${order.currency}.`,
+          `[POLICE] Automated report generated for Driver: ${order.deliveryDetails.driverName}, Vehicle: ${order.deliveryDetails.driverPhone || 'N/A'}.`
+        ]
+      });
+
+      // 2. Deduct from driver wallet (or bank via simulated deduction)
+      const driverRef = doc(db, 'users', driverId);
+      const driverDoc = await getDoc(driverRef);
+      
+      if (driverDoc.exists()) {
+        const driverData = driverDoc.data();
+        await updateDoc(driverRef, {
+          walletBalance: (driverData.walletBalance || 0) - penaltyAmount
+        });
+
+        // 3. Log the penalty event
+        await addDoc(collection(db, 'driver_penalties'), {
+          driverId,
+          orderId,
+          amount: penaltyAmount,
+          reason: notes,
+          createdAt: new Date().toISOString(),
+          driverDetails: {
+            name: driverData.displayName,
+            nationalId: driverData.nationalId,
+            vehicle: driverData.vehicleInfo
+          }
+        });
+
+        alert(`Driver reported. A penalty of ${penaltyAmount.toLocaleString()} has been charged to their account and authorities have been notified.`);
+      }
+    } catch (error) {
+      console.error("Failed to report driver:", error);
+      alert("Error reporting driver. Please try again.");
+    }
+  };
+  
+  const releaseFunds = async (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    try {
+      // 1. Calculate distributions based on distance-calculated fees
+      const total = order.total;
+      const rateToUSD = rates[order.currency] || 1;
+      
+      // Driver gets the delivery fee (convert back to USD for wallet balance if needed)
+      const driverFee = order.deliveryDetails?.deliveryFee 
+        ? order.deliveryDetails.deliveryFee / rateToUSD 
+        : total * 0.05; 
+      
+      // Supplier gets more than just source cost in some models, but let's use sourceCost as the baseline
+      const supplierPayout = order.sourceCost; // The cost of goods
+      const platformProfit = order.profit; // The markup/profit for product creator
+
+      // 2. Update status and log
+      await updateOrder(orderId, {
+        status: 'delivered',
+        deliveryDetails: {
+          ...order.deliveryDetails,
+          deliveredAt: new Date().toISOString()
+        },
+        automationLog: [
+          ...(order.automationLog || []),
+          `[SCAN] QR Code verified by Customer.`,
+          `[FINANCE] Payment released from DigiPesa Escrow.`,
+          `[FINANCE] Driver payout (Distance: ${order.deliveryDetails?.distanceKm?.toFixed(1)}km): ${formatPrice(driverFee * rateToUSD, order.currency, rates)}.`,
+          `[FINANCE] Supplier payout: ${formatPrice(supplierPayout * rateToUSD, order.currency, rates)}.`,
+          `[FINANCE] Platform/Creator profit: ${formatPrice(platformProfit * rateToUSD, order.currency, rates)}.`
+        ]
+      });
+
+      // 3. Pay Driver
+      if (order.deliveryDetails?.driverId) {
+        const driverRef = doc(db, 'users', order.deliveryDetails.driverId);
+        await updateDoc(driverRef, {
+          walletBalance: increment(driverFee)
+        });
+      }
+
+      // 4. Pay Sellers (Supplier + Platform profit)
+      const sellers = new Set(order.items.map(i => i.sellerId).filter(Boolean));
+      for (const sellerId of sellers) {
+        if (!sellerId) continue;
+        const sellerItems = order.items.filter(i => i.sellerId === sellerId);
+        const sellerSourceCost = sellerItems.reduce((s, i) => s + (i.price * i.quantity), 0);
+        const sellerProfit = sellerItems.reduce((s, i) => s + (i.price * (i.markup / 100) * i.quantity), 0);
+        
+        await updateDoc(doc(db, 'users', sellerId as string), {
+          walletBalance: increment(sellerSourceCost + sellerProfit)
+        });
+
+        // Check for referral commission
+        const sellerDoc = await getDoc(doc(db, 'users', sellerId as string));
+        if (sellerDoc.exists()) {
+          const sellerData = sellerDoc.data();
+          if (sellerData.referredBy) {
+            const commission = sellerProfit * 0.1; // 10% of profit to referrer
+            await awardReferralCommission(sellerData.referredBy, sellerId as string, 'seller', order.id, commission, 'seller_sale');
+          }
+        }
+      }
+
+      alert("QR Verified! Funds released successfully to Driver, Supplier, and Platform.");
+    } catch (error) {
+      console.error("Fund release failed:", error);
+      alert("Error releasing funds.");
+    }
+  };
+
   useEffect(() => {
     const handleOrderUpdate = (e: any) => {
       const { id, automationStatus, automationLog, status } = e.detail;
@@ -5556,12 +7303,14 @@ export default function App() {
             cart={cart} 
             isAdmin={isAdmin} 
             isSeller={isSeller}
+            isDriver={isDriver}
             currency={currency}
             setCurrency={setCurrency}
             rates={rates}
             user={user}
+            setShowAuthModal={setShowAuthModal}
           />
-          <main>
+          <main className="pb-24 sm:pb-0">
             <Routes>
               <Route path="/" element={
                 <Storefront 
@@ -5571,6 +7320,8 @@ export default function App() {
                   rates={rates} 
                   isAdmin={isAdmin} 
                   user={user}
+                  isInstallable={isInstallable}
+                  installApp={installApp}
                 />
               } />
               <Route path="/admin" element={
@@ -5586,6 +7337,7 @@ export default function App() {
                     rates={rates} 
                     user={user}
                     isAdmin={isAdmin}
+                    reportDriver={reportDriver}
                   />
                 ) : (
                   <div className="min-h-[60vh] flex items-center justify-center">
@@ -5618,11 +7370,90 @@ export default function App() {
                   </div>
                 )
               } />
+              <Route path="/driver" element={
+                isDriver ? (
+                  <DriverDashboard 
+                    user={user}
+                    orders={orders}
+                    updateOrder={updateOrder}
+                    currency={currency}
+                    rates={rates}
+                    awardReferralCommission={awardReferralCommission}
+                  />
+                ) : (
+                  <div className="min-h-[60vh] flex items-center justify-center">
+                    <div className="text-center">
+                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h2 className="text-xl font-bold mb-2">Access Denied</h2>
+                      <p className="text-gray-500 mb-6">You must be a registered driver to access the Driver Portal.</p>
+                      <Link to="/" className="text-indigo-600 font-bold">Return to Store</Link>
+                    </div>
+                  </div>
+                )
+              } />
+              <Route path="/referrals" element={
+                user ? (
+                  <ReferralDashboard 
+                    user={user}
+                    currency={currency}
+                    rates={rates}
+                  />
+                ) : (
+                  <div className="min-h-[60vh] flex items-center justify-center">
+                    <div className="text-center">
+                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h2 className="text-xl font-bold mb-2">Login Required</h2>
+                      <p className="text-gray-500 mb-6">Please login to access your referral dashboard.</p>
+                      <button onClick={() => setShowAuthModal(true)} className="text-indigo-600 font-bold">Login Now</button>
+                    </div>
+                  </div>
+                )
+              } />
               <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} user={user} />} />
+              <Route path="/dashboard" element={
+                user ? (
+                  <CustomerDashboard 
+                    user={user}
+                    orders={orders}
+                    currency={currency}
+                    rates={rates}
+                    reportDriver={reportDriver}
+                    releaseFunds={releaseFunds}
+                    updateOrder={updateOrder}
+                    isInstallable={isInstallable}
+                    installApp={installApp}
+                  />
+                ) : (
+                  <div className="min-h-[60vh] flex items-center justify-center">
+                    <div className="text-center">
+                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h2 className="text-xl font-bold mb-2">Login Required</h2>
+                      <p className="text-gray-500 mb-6">Please login to access your dashboard.</p>
+                      <button onClick={() => setShowAuthModal(true)} className="text-indigo-600 font-bold">Login Now</button>
+                    </div>
+                  </div>
+                )
+              } />
             </Routes>
           </main>
 
+          <MobileNavigation 
+            user={user} 
+            cartCount={cart.length} 
+            isInstallable={isInstallable}
+            installApp={installApp}
+          />
+
           {user && !isAdmin && <ChatWidget user={user} />}
+
+          <AnimatePresence>
+            {showAuthModal && (
+              <AuthModal 
+                onClose={() => setShowAuthModal(false)} 
+                onSuccess={() => setShowAuthModal(false)} 
+              />
+            )}
+          </AnimatePresence>
           
           <footer className="border-t border-gray-100 py-12 mt-24">
             <div className="max-w-7xl mx-auto px-4">
