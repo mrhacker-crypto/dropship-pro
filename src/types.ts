@@ -146,6 +146,11 @@ export interface Order {
   };
   referralCommission?: number;
   ownerProfit?: number;
+  subtotal?: number;
+  escrowFee?: number;
+  platformCut?: number;
+  inviterCut?: number;
+  inviterId?: string;
   createdAt: string;
   stripeSessionId?: string;
 }

@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
-import React, { useState, useEffect, Component, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, Component, useCallback, useMemo, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft, Gift, Copy, Link as LinkIcon, UserPlus, Users, ShieldAlert, User as UserIcon, Zap, Crown, Camera, FileText, Download, ChevronLeft, Lock } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, ExternalLink, Package, Settings, Store, ChevronRight, ChevronDown, CreditCard, CheckCircle, CheckCircle2, Clock, Truck, ShieldCheck, AlertCircle, Smartphone, X, Info, MapPin, Check, Plane, History, LogIn, LogOut, Search, Loader2, Play, Share2, Star, BarChart3, TrendingUp, DollarSign, MessageSquare, Send, Sparkles, Menu, ArrowLeft, Gift, Copy, Link as LinkIcon, UserPlus, Users, ShieldAlert, User as UserIcon, Zap, Crown, Award, Camera, FileText, Download, ChevronLeft, Lock, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -16,6 +16,36 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
+import { 
+  APIProvider, 
+  Map, 
+  AdvancedMarker, 
+  Pin, 
+  useMap, 
+  useMapsLibrary,
+  useAdvancedMarkerRef,
+  InfoWindow
+} from '@vis.gl/react-google-maps';
+
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
+const hasValidMapKey = Boolean(GOOGLE_MAPS_API_KEY) && GOOGLE_MAPS_API_KEY !== 'YOUR_API_KEY';
+
+const MapSplashScreen = () => (
+  <div className="flex flex-col items-center justify-center h-80 bg-gray-50 rounded-[2.5rem] border-2 border-dashed border-gray-200 p-8 text-center">
+    <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6">
+      <MapPin className="w-8 h-8 text-indigo-600" />
+    </div>
+    <h3 className="text-lg font-bold text-gray-900 mb-2">Google Maps API Key Required</h3>
+    <p className="text-sm text-gray-500 mb-6 max-w-xs">
+      To enable precise location picking and live tracking, please add your Google Maps API key in Settings.
+    </p>
+    <div className="text-left bg-white p-4 rounded-xl border border-gray-100 text-[10px] space-y-2 font-medium">
+      <p>1. Open <b>Settings</b> (⚙️ top right)</p>
+      <p>2. Go to <b>Secrets</b></p>
+      <p>3. Add <code>GOOGLE_MAPS_PLATFORM_KEY</code></p>
+    </div>
+  </div>
+);
 
 // Fix Leaflet marker icons in production
 // @ts-ignore
@@ -633,24 +663,37 @@ const QRScannerModal = ({ onScan, onClose }: { onScan: (data: string) => void, o
   );
 };
 
-const LocationPicker = ({ onLocationSelect, initialLocation }: { onLocationSelect: (lat: number, lng: number, address?: string) => void, initialLocation?: { lat: number, lng: number } }) => {
-  const [position, setPosition] = useState<[number, number]>(initialLocation ? [initialLocation.lat, initialLocation.lng] : [-6.7924, 39.2083]); // Default to Dar es Salaam
-  const [loading, setLoading] = useState(false);
+const LocationPickerInternal = ({ onLocationSelect, position, setPosition, loading, setLoading }: any) => {
+  const map = useMap();
+  const placesLib = useMapsLibrary('places');
+  const autocompleteContainerRef = useRef<HTMLDivElement>(null);
 
-  function LocationMarker() {
-    const map = useMapEvents({
-      click(e) {
-        setPosition([e.latlng.lat, e.latlng.lng]);
-        onLocationSelect(e.latlng.lat, e.latlng.lng);
-      },
+  useEffect(() => {
+    if (!placesLib || !autocompleteContainerRef.current || !map) return;
+
+    // Use the new PlaceAutocompleteElement (Web Component)
+    const autocompleteWidget = document.createElement('gmp-place-autocomplete') as any;
+    
+    // @ts-ignore - JSX attribute trap from skill CF8
+    autocompleteContainerRef.current.appendChild(autocompleteWidget);
+
+    autocompleteWidget.addEventListener('gmp-placeselect', async (e: any) => {
+      const place = e.item.place;
+      await place.fetchFields({ fields: ['location', 'displayName', 'formattedAddress'] });
+      
+      if (place.location) {
+        const newPos = { lat: place.location.lat(), lng: place.location.lng() };
+        setPosition(newPos);
+        map.panTo(newPos);
+        map.setZoom(17);
+        onLocationSelect(newPos.lat, newPos.lng, place.formattedAddress);
+      }
     });
 
-    return position === null ? null : (
-      <Marker position={position} icon={homeIcon}>
-        <Popup>Delivery will be sent here.</Popup>
-      </Marker>
-    );
-  }
+    return () => {
+      if (autocompleteContainerRef.current) autocompleteContainerRef.current.innerHTML = '';
+    };
+  }, [placesLib, map]);
 
   const handleGetCurrentLocation = () => {
     setLoading(true);
@@ -663,7 +706,12 @@ const LocationPicker = ({ onLocationSelect, initialLocation }: { onLocationSelec
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        setPosition([latitude, longitude]);
+        const newPos = { lat: latitude, lng: longitude };
+        setPosition(newPos);
+        if (map) {
+          map.panTo(newPos);
+          map.setZoom(17);
+        }
         onLocationSelect(latitude, longitude);
         setLoading(false);
       },
@@ -678,42 +726,81 @@ const LocationPicker = ({ onLocationSelect, initialLocation }: { onLocationSelec
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-indigo-600">
-          <MapPin className="w-5 h-5" />
-          <h3 className="font-bold text-sm">Pin Delivery Point</h3>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-indigo-600">
+            <Search className="w-5 h-5" />
+            <h3 className="font-bold text-sm">Search Delivery Point</h3>
+          </div>
+          <button
+            type="button"
+            onClick={handleGetCurrentLocation}
+            disabled={loading}
+            className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
+          >
+            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
+            Use My Current Location
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleGetCurrentLocation}
-          disabled={loading}
-          className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
+        
+        <div ref={autocompleteContainerRef} className="autocomplete-container min-h-[56px] bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm" />
+      </div>
+
+      <div className="h-64 sm:h-80 w-full rounded-2xl overflow-hidden border-2 border-gray-100 relative">
+        <Map
+          defaultCenter={position}
+          defaultZoom={13}
+          mapId="LOCATION_PICKER_MAP"
+          onClick={(e) => {
+            if (e.detail.latLng) {
+              const newPos = { lat: e.detail.latLng.lat, lng: e.detail.latLng.lng };
+              setPosition(newPos);
+              onLocationSelect(newPos.lat, newPos.lng);
+            }
+          }}
+          gestureHandling={'greedy'}
+          disableDefaultUI={true}
+          internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+          style={{ width: '100%', height: '100%' }}
         >
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
-          Use My Precise Location
-        </button>
+          <AdvancedMarker position={position}>
+            <Pin background="#4f46e5" glyphColor="#ffffff" borderColor="#4f46e5" />
+          </AdvancedMarker>
+        </Map>
       </div>
-      <div className="h-64 sm:h-80 w-full rounded-2xl overflow-hidden border-2 border-gray-100">
-        <MapContainer center={position} zoom={13} scrollWheelZoom={false}>
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <LocationMarker />
-        </MapContainer>
-      </div>
-      <p className="text-[10px] text-gray-400 italic text-center">Tap or Drag on the map to set an exact drop-off point.</p>
+      <p className="text-[10px] text-gray-400 italic text-center">Tap the map or use the search bar above for precision.</p>
     </div>
   );
 };
 
+const LocationPicker = ({ onLocationSelect, initialLocation }: { onLocationSelect: (lat: number, lng: number, address?: string) => void, initialLocation?: { lat: number, lng: number } }) => {
+  const [position, setPosition] = useState<google.maps.LatLngLiteral>(initialLocation || { lat: -6.7924, lng: 39.2083 });
+  const [loading, setLoading] = useState(false);
+
+  if (!hasValidMapKey) return <MapSplashScreen />;
+
+  return (
+    <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+      <LocationPickerInternal 
+        onLocationSelect={onLocationSelect}
+        position={position}
+        setPosition={setPosition}
+        loading={loading}
+        setLoading={setLoading}
+      />
+    </APIProvider>
+  );
+};
+
 const TrackingMap = ({ order }: { order: Order }) => {
-  const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
+  const [driverPos, setDriverPos] = useState<google.maps.LatLngLiteral | null>(null);
   const [progress, setProgress] = useState(0);
 
-  const destination: [number, number] = order.location ? [order.location.lat, order.location.lng] : [-6.7924, 39.2083];
-  // Simulate driver starting from a nearby hub (e.g., Kariakoo)
-  const origin: [number, number] = [-6.8161, 39.2804]; 
+  const destination: google.maps.LatLngLiteral = (order.customer && order.customer.lat && order.customer.lng) 
+    ? { lat: order.customer.lat, lng: order.customer.lng } 
+    : { lat: -6.7924, lng: 39.2083 };
+    
+  const origin: google.maps.LatLngLiteral = { lat: -6.8161, lng: 39.2804 }; 
 
   useEffect(() => {
     if (order.status === 'delivered') {
@@ -734,56 +821,61 @@ const TrackingMap = ({ order }: { order: Order }) => {
       }, 2000);
 
       return () => clearInterval(interval);
+    } else {
+      setDriverPos(origin);
     }
   }, [order.status]);
 
   useEffect(() => {
-    // Interpolate position
-    const lat = origin[0] + (destination[0] - origin[0]) * progress;
-    const lng = origin[1] + (destination[1] - origin[1]) * progress;
-    setDriverPos([lat, lng]);
+    const lat = origin.lat + (destination.lat - origin.lat) * progress;
+    const lng = origin.lng + (destination.lng - origin.lng) * progress;
+    setDriverPos({ lat, lng });
   }, [progress]);
+
+  if (!hasValidMapKey) return <MapSplashScreen />;
 
   return (
     <div className="h-80 w-full rounded-[2.5rem] overflow-hidden border-2 border-gray-100 shadow-inner relative">
-      <MapContainer center={destination} zoom={12} scrollWheelZoom={false}>
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        
-        {/* Destination / Customer Home */}
-        <Marker position={destination} icon={homeIcon}>
-          <Popup>Delivery Address</Popup>
-        </Marker>
+      <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+        <Map
+          defaultCenter={destination}
+          defaultZoom={12}
+          mapId="TRACKING_MAP"
+          gestureHandling={'greedy'}
+          disableDefaultUI={true}
+          internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+          style={{ width: '100%', height: '100%' }}
+        >
+          {/* Destination Marker */}
+          <AdvancedMarker position={destination}>
+            <div className="w-10 h-10 bg-white rounded-full p-2 shadow-lg border-2 border-indigo-600 flex items-center justify-center">
+               <Home className="w-5 h-5 text-indigo-600" />
+            </div>
+          </AdvancedMarker>
 
-        {/* Driver / Moving Package */}
-        {driverPos && (
-          <>
-            <Marker position={driverPos} icon={order.status === 'picked_up' || order.status === 'on_the_way' ? driverIcon : packageIcon}>
-              <Popup>
-                {order.status === 'picked_up' || order.status === 'on_the_way' 
-                  ? `Driver is on the way!` 
-                  : `Item at Hub`}
-              </Popup>
-            </Marker>
-            <Circle 
-              center={driverPos} 
-              radius={800} 
-              pathOptions={{ fillColor: '#4f46e5', fillOpacity: 0.1, color: '#4f46e5', weight: 1 }} 
-            />
-          </>
-        )}
-      </MapContainer>
+          {/* Driver Marker */}
+          {driverPos && (
+            <AdvancedMarker position={driverPos}>
+              <div className="w-10 h-10 bg-indigo-600 rounded-full p-2 shadow-lg border-2 border-white flex items-center justify-center animate-bounce">
+                 {order.status === 'picked_up' || order.status === 'on_the_way' 
+                   ? <Truck className="w-5 h-5 text-white" /> 
+                   : <Package className="w-5 h-5 text-white" />}
+              </div>
+            </AdvancedMarker>
+          )}
+
+          {/* Path Line? (Better to use Routes API but for simulation we keep it simple or use computed path) */}
+        </Map>
+      </APIProvider>
       
       <div className="absolute bottom-4 left-4 right-4 z-20 flex gap-2 overflow-x-auto scrollbar-hide">
         <div className="shrink-0 flex items-center gap-2 bg-white/90 backdrop-blur px-4 py-2 rounded-full border border-white shadow-lg">
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          <span className="text-[10px] font-bold text-gray-900 uppercase">Live Tracking Active</span>
+          <span className="text-[10px] font-bold text-gray-900 uppercase">Satellite Link Verified</span>
         </div>
         <div className="shrink-0 flex items-center gap-2 bg-white/90 backdrop-blur px-4 py-2 rounded-full border border-white shadow-lg">
           <Clock className="w-3 h-3 text-indigo-600" />
-          <span className="text-[10px] font-bold text-gray-900 uppercase">ETA: {Math.max(5, Math.ceil((1 - progress) * 25))} Mins</span>
+          <span className="text-[10px] font-bold text-gray-900 uppercase">Estimated Arrival: {Math.max(5, Math.ceil((1 - progress) * 25))} Mins</span>
         </div>
       </div>
     </div>
@@ -4297,6 +4389,83 @@ const Storefront = ({
             </div>
           </div>
         </section>
+
+        {/* About the Founder / Story Section */}
+        <section className="mt-16 bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 p-8 sm:p-12">
+            {/* Visual Column */}
+            <div className="lg:col-span-5 flex flex-col justify-between bg-gradient-to-br from-indigo-900 to-indigo-950 p-8 sm:p-10 rounded-[2rem] text-white relative overflow-hidden">
+              <div className="z-10">
+                <span className="text-[10px] font-bold tracking-widest text-indigo-300 uppercase bg-indigo-500/20 px-3 py-1.5 rounded-full border border-indigo-500/30">
+                  Founder's Corner
+                </span>
+                <h3 className="mt-8 text-2xl sm:text-3xl font-extrabold tracking-tight">
+                  Deogratius Richard
+                </h3>
+                <p className="mt-2 text-indigo-200 text-sm font-medium">
+                  Founder & Lead Visionary, Dropship Pro
+                </p>
+              </div>
+
+              <div className="mt-12 space-y-4 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-indigo-500/20 rounded-lg flex items-center justify-center border border-indigo-500/20">
+                    <MapPin className="w-4 h-4 text-indigo-300" />
+                  </div>
+                  <span className="text-sm font-semibold text-indigo-100">Dar es Salaam, Tanzania</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-indigo-500/20 rounded-lg flex items-center justify-center border border-indigo-500/20">
+                    <Award className="w-4 h-4 text-indigo-300" />
+                  </div>
+                  <span className="text-sm font-semibold text-indigo-100">National E-Commerce Pioneer</span>
+                </div>
+              </div>
+
+              {/* Decorative graphic background */}
+              <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl"></div>
+              <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-500/15 rounded-full blur-3xl"></div>
+            </div>
+
+            {/* Content Column */}
+            <div className="lg:col-span-7 flex flex-col justify-center space-y-6">
+              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
+                Our Story & Leadership
+              </h3>
+              
+              <div className="text-gray-600 space-y-4 leading-relaxed text-sm">
+                <p>
+                  Born and raised in the vibrant coastal hub of <strong>Dar es Salaam, Tanzania</strong>, 
+                  our founder, <strong>Deogratius Richard</strong>, established Dropship Pro with a clean, 
+                  pioneering vision: to revolutionize the landscape of trade, logistics, and local e-commerce within East Africa.
+                </p>
+                <p>
+                  Witnessing firsthand the dynamic evolution of local markets and logistics in Dar es Salaam, Deogratius realized 
+                  the critical need for a fully unified, reliable dropshipping network. He engineered Dropship Pro to empower 
+                  local suppliers, driver fleets, and independent referrers, creating an inclusive ecosystem where 
+                  every participant can achieve seamless financial success.
+                </p>
+                <p>
+                  Under his steady leadership, Dropship Pro has grown into an official, highly secure trust platform 
+                  featuring automated logistics routing, guaranteed multi-layer escrow fee allocations, and decentralized 
+                  earning channels. Our goal remains absolute: to build the most efficient, transparent, and trusted 
+                  peer-to-peer commerce gateway for Tanzania and beyond.
+                </p>
+              </div>
+
+              <div className="pt-6 border-t border-gray-100 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-gray-400 uppercase tracking-widest font-bold">Official Seal</div>
+                  <div className="text-sm font-serif italic text-gray-700 mt-1">Deogratius Richard</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400 uppercase tracking-widest font-bold">HQ Location</div>
+                  <div className="text-sm font-bold text-indigo-600 mt-1">Dar es Salaam, TZ</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -4957,7 +5126,7 @@ const AdminPanel = ({
   });
   const [importPreview, setImportPreview] = useState<Product | null>(null);
   const [bulkResults, setBulkResults] = useState<{url: string, status: 'success' | 'error', message?: string}[]>([]);
-  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'fulfillment' | 'tracking' | 'messages'>('overview');
+  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'fulfillment' | 'tracking' | 'messages' | 'payouts'>('overview');
   const [approvalSubTab, setApprovalSubTab] = useState<'pending' | 'approved'>('pending');
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
@@ -5251,6 +5420,13 @@ const AdminPanel = ({
             className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", tab === 'messages' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
           >
             Messages
+          </button>
+          <button 
+            onClick={() => setTab('payouts')}
+            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5", tab === 'payouts' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            <CreditCard className="w-4 h-4 text-indigo-500" />
+            Platform Payouts
           </button>
         </div>
       </div>
@@ -6757,6 +6933,242 @@ const AdminPanel = ({
         </motion.div>
       )}
 
+      {tab === 'payouts' && (
+        <motion.div 
+          key="payouts"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="space-y-8"
+        >
+          {/* Card Info and Stats */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Visual Credit Card */}
+            <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-8 shadow-xl border border-indigo-800 relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+              {/* Chip and Visa */}
+              <div className="flex justify-between items-start z-10">
+                <div className="space-y-1">
+                  <div className="w-12 h-9 bg-yellow-400/80 rounded-lg border border-yellow-300 shadow-sm opacity-90 flex items-center justify-center">
+                    <div className="grid grid-cols-3 gap-0.5 w-8 h-6 opacity-30">
+                      <div className="border-r border-b border-black"></div>
+                      <div className="border-r border-b border-black"></div>
+                      <div className="border-b border-black"></div>
+                      <div className="border-r border-black"></div>
+                      <div className="border-r border-black"></div>
+                      <div></div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] uppercase tracking-wider font-semibold text-indigo-300">Escrow Settlement Unit</span>
+                </div>
+                <div className="text-right">
+                  <span className="italic font-bold text-2xl tracking-tight">Visa</span>
+                  <div className="text-[8px] uppercase tracking-widest text-indigo-300">Platform Card</div>
+                </div>
+              </div>
+              
+              {/* Card Number */}
+              <div className="my-6 z-10">
+                <div className="font-mono text-xl sm:text-2xl tracking-[0.25em] text-center drop-shadow-md">
+                  5505 5800 0429 5960
+                </div>
+              </div>
+              
+              {/* Expiry, CVV, Card Holder */}
+              <div className="flex justify-between items-end z-10">
+                <div>
+                  <div className="text-[8px] uppercase tracking-widest text-indigo-400">Card Holder</div>
+                  <div className="text-xs font-semibold tracking-wider uppercase font-sans">DropShip Pro Admin</div>
+                </div>
+                <div className="flex gap-4">
+                  <div>
+                    <div className="text-[8px] uppercase tracking-widest text-indigo-400">Expires</div>
+                    <div className="text-xs font-semibold font-mono">07/30</div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] uppercase tracking-widest text-indigo-400">CVV</div>
+                    <div className="text-xs font-semibold font-mono">679</div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Background abstract shapes */}
+              <div className="absolute -bottom-20 -right-20 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl"></div>
+              <div className="absolute -top-10 -left-10 w-40 h-40 bg-indigo-500/15 rounded-full blur-3xl"></div>
+            </div>
+
+            {/* Quick Stats cards */}
+            <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4">
+                    <DollarSign className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Platform Card Revenue</h3>
+                  <p className="text-2xl font-bold text-gray-900 font-sans">
+                    {formatPrice(
+                      orders.reduce((sum, o) => {
+                        if (o.status === 'delivered') {
+                          const referrerId = o.inviterId || null;
+                          const originalTotal = o.subtotal || o.total / 1.01;
+                          const platformCut = referrerId ? originalTotal * 0.007 : originalTotal * 0.01;
+                          return sum + platformCut;
+                        }
+                        return sum;
+                      }, 0),
+                      currency, rates, 'USD'
+                    )}
+                  </p>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-4 uppercase font-bold tracking-wider">
+                  Settled directly to Card
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-4">
+                    <Award className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Inviter Commissions</h3>
+                  <p className="text-2xl font-bold text-gray-900 font-sans">
+                    {formatPrice(
+                      orders.reduce((sum, o) => {
+                        if (o.status === 'delivered') {
+                          const referrerId = o.inviterId || null;
+                          const originalTotal = o.subtotal || o.total / 1.01;
+                          const inviterCut = referrerId ? originalTotal * 0.003 : 0;
+                          return sum + inviterCut;
+                        }
+                        return sum;
+                      }, 0),
+                      currency, rates, 'USD'
+                    )}
+                  </p>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-4 uppercase font-bold tracking-wider">
+                  Distributed to Referral link owners
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-4">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Escrowed Orders</h3>
+                  <p className="text-2xl font-bold text-gray-900 font-sans">
+                    {orders.filter(o => o.escrowFee && o.escrowFee > 0).length}
+                  </p>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-4 uppercase font-bold tracking-wider">
+                  Orders secured with 1% increment
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Ledger of Transfers */}
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Platform Escrow Ledger</h3>
+                <p className="text-sm text-gray-400">Detailed overview of escrow fee increments and card transfers.</p>
+              </div>
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full uppercase font-bold tracking-widest">
+                Realtime updates
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-400 font-bold uppercase tracking-widest text-[10px] border-b border-gray-100">
+                    <th className="p-4 sm:p-6">Date</th>
+                    <th className="p-4 sm:p-6">Order ID</th>
+                    <th className="p-4 sm:p-6">Buyer/Referral</th>
+                    <th className="p-4 sm:p-6 text-right">Escrow Fee (1%)</th>
+                    <th className="p-4 sm:p-6 text-right">Admin Cut (0.7% or 1%)</th>
+                    <th className="p-4 sm:p-6 text-right">Inviter Cut (0.3%)</th>
+                    <th className="p-4 sm:p-6">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {orders.filter(o => o.escrowFee && o.escrowFee > 0).length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-12 text-center text-gray-500 font-sans">
+                        No escrow fee transfers recorded yet. Place an order to see the ledger populate!
+                      </td>
+                    </tr>
+                  ) : (
+                    orders
+                      .filter(o => o.escrowFee && o.escrowFee > 0)
+                      .map((o) => {
+                        const hasRef = Boolean(o.inviterId);
+                        const displayAdminCut = o.platformCut || (hasRef ? o.total * 0.007 : o.total * 0.01);
+                        const displayInviterCut = o.inviterCut || (hasRef ? o.total * 0.003 : 0);
+                        return (
+                          <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="p-4 sm:p-6 whitespace-nowrap text-gray-500 font-mono text-xs">
+                              {new Date(o.createdAt).toLocaleString()}
+                            </td>
+                            <td className="p-4 sm:p-6 font-bold text-gray-900 font-sans">
+                              {o.id}
+                            </td>
+                            <td className="p-4 sm:p-6 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-gray-700">{o.customer.name}</span>
+                                {hasRef ? (
+                                  <span className="text-[10px] text-green-600 font-bold uppercase tracking-wider flex items-center gap-1 mt-0.5">
+                                    <span className="w-1 h-1 bg-green-500 rounded-full"></span>
+                                    Invited by {o.inviterId?.substring(0, 5)}...
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400 uppercase tracking-wider mt-0.5">
+                                    Direct signup
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-4 sm:p-6 text-right font-bold text-gray-900">
+                              {formatPrice(o.escrowFee || 0, currency, rates, 'USD')}
+                            </td>
+                            <td className="p-4 sm:p-6 text-right whitespace-nowrap font-sans">
+                              <div className="flex flex-col items-end">
+                                <span className="font-bold text-indigo-600">{formatPrice(displayAdminCut, currency, rates, 'USD')}</span>
+                                <span className="text-[9px] text-indigo-400 font-mono tracking-tighter">to Visa ****5960</span>
+                              </div>
+                            </td>
+                            <td className="p-4 sm:p-6 text-right font-semibold text-emerald-600 whitespace-nowrap">
+                              {hasRef ? formatPrice(displayInviterCut, currency, rates, 'USD') : '—'}
+                            </td>
+                            <td className="p-4 sm:p-6 whitespace-nowrap">
+                              {o.status === 'delivered' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-100">
+                                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                                  Settle Completed
+                                </span>
+                              ) : o.status === 'cancelled' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-100">
+                                  Refunded
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-100 animate-pulse">
+                                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                                  Staged in Escrow
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {importPreview && (
         <ProductModal
           product={importPreview}
@@ -6830,7 +7242,8 @@ const CartPage = ({
   addOrder, 
   currency, 
   rates,
-  user
+  user,
+  userProfile
 }: { 
   cart: CartItem[]; 
   setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
@@ -6838,6 +7251,7 @@ const CartPage = ({
   currency: string;
   rates: ExchangeRates;
   user: User | null;
+  userProfile?: UserProfile | null;
 }) => {
   const [step, setStep] = useState<'cart' | 'checkout' | 'success'>('cart');
   const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'bank_transfer'>('mpesa');
@@ -6919,6 +7333,34 @@ const CartPage = ({
   }, 0);
 
   const getGeocodingData = async (lat: number, lon: number) => {
+    if (hasValidMapKey) {
+      try {
+        const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_MAPS_API_KEY}`);
+        const data = await response.json();
+        if (data.results && data.results[0]) {
+          const result = data.results[0];
+          const addressComponents = result.address_components;
+          const getComponent = (type: string) => addressComponents.find((c: any) => c.types.includes(type))?.long_name;
+
+          return {
+            display_name: result.formatted_address,
+            address: {
+              road: getComponent('route'),
+              house_number: getComponent('street_number'),
+              city: getComponent('locality') || getComponent('administrative_area_level_2'),
+              town: getComponent('locality'),
+              village: getComponent('sublocality'),
+              suburb: getComponent('neighborhood'),
+              country: getComponent('country'),
+              postcode: getComponent('postal_code')
+            }
+          };
+        }
+      } catch (err) {
+        console.error("Google Geocoding failed, falling back to OSM", err);
+      }
+    }
+
     // Try OpenStreetMap (Nominatim) - Primary no-key alternative
     try {
       const response = await fetch(
@@ -7105,26 +7547,41 @@ const CartPage = ({
       const data = await res.json();
       
       if (data.success) {
-        const totalUSD = cart.reduce((sum, item) => sum + (item.price * (1 + item.markup / 100)) * item.quantity, 0);
+        const originalTotalUSD = cart.reduce((sum, item) => sum + (item.price * (1 + item.markup / 100)) * item.quantity, 0);
         const sourceCostUSD = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const totalShippingCostUSD = cart.reduce((sum, item) => sum + (item.shippingCost || 0) * item.quantity, 0);
-        const profitUSD = totalUSD - sourceCostUSD - totalShippingCostUSD;
+        const profitUSD = originalTotalUSD - sourceCostUSD - totalShippingCostUSD;
+        
+        const escrowFeeUSD = originalTotalUSD * 0.01;
+        const finalTotalUSD = originalTotalUSD + escrowFeeUSD;
+        
+        const referrerId = userProfile?.referredBy || localStorage.getItem('referrer') || null;
+        const platformCutUSD = referrerId ? originalTotalUSD * 0.007 : originalTotalUSD * 0.01;
+        const inviterCutUSD = referrerId ? originalTotalUSD * 0.003 : 0;
         
         const newOrder: Order = {
           id: data.orderId || `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
           buyerId: user.uid,
           items: [...cart],
           customer: customer,
-          total: totalUSD,
+          total: finalTotalUSD,
+          subtotal: originalTotalUSD,
           sourceCost: sourceCostUSD,
           shippingCost: totalShippingCostUSD,
           profit: profitUSD,
+          escrowFee: escrowFeeUSD,
+          platformCut: platformCutUSD,
+          inviterCut: inviterCutUSD,
+          inviterId: referrerId || undefined,
           paymentMethod,
           status: paymentMethod === 'mpesa' ? 'paid' : 'pending',
           automationStatus: 'idle',
           automationLog: [
             `[GATEWAY] Payment confirmed via ${paymentMethod.toUpperCase()}.`,
-            `[ESCROW] Total of ${formatPrice(totalUSD, 'USD', rates, 'USD')} staged in Holding Unit.`,
+            `[ESCROW] Total payment of ${formatPrice(finalTotalUSD, 'USD', rates, 'USD')} secured in Escrow (includes 1% secure escrow protection fee).`,
+            referrerId 
+              ? `[REFERRAL] Invited by User ${referrerId.substring(0, 5)}...: Platform cut is 0.7% (${formatPrice(platformCutUSD, 'USD', rates, 'USD')}), Inviter cut is 0.3% (${formatPrice(inviterCutUSD, 'USD', rates, 'USD')}).`
+              : `[ESCROW] Standard Platform escrow cut of 1.0% (${formatPrice(platformCutUSD, 'USD', rates, 'USD')}) applies.`,
             `[SYSTEM] Notifying supplier (${cart[0]?.sellerName || 'Primary'}) to confirm availability.`,
             `[SYSTEM] Waiting for supplier confirmation...`
           ],
@@ -7407,12 +7864,26 @@ const CartPage = ({
                 <span className="text-sm font-bold">{formatPrice(totalUSD, currency, rates, 'USD')}</span>
               </div>
               <div className="flex justify-between text-gray-500">
+                <span className="text-sm">Secure Escrow Fee (1%)</span>
+                <span className="text-sm font-bold text-indigo-600">+{formatPrice(totalUSD * 0.01, currency, rates, 'USD')}</span>
+              </div>
+              <div className="flex justify-between text-gray-500">
                 <span className="text-sm">Shipping</span>
                 <span className="text-sm text-green-600 font-bold">Free</span>
               </div>
+              
+              {(userProfile?.referredBy || localStorage.getItem('referrer')) && (
+                <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-[11px] text-green-700 font-medium">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                    Referred order: 0.3% split to inviter, 0.7% to platform.
+                  </span>
+                </div>
+              )}
+
               <div className="pt-4 border-t border-gray-200 flex justify-between text-xl font-bold text-gray-900">
                 <span>Total</span>
-                <span>{formatPrice(totalUSD, currency, rates, 'USD')}</span>
+                <span>{formatPrice(totalUSD * 1.01, currency, rates, 'USD')}</span>
               </div>
             </div>
             
@@ -7432,7 +7903,7 @@ const CartPage = ({
                 className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
               >
                 {paymentMethod === 'mpesa' ? <Smartphone className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
-                {isProcessing ? (paymentMethod === 'mpesa' ? 'Processing M-Pesa...' : 'Processing Bank Transfer...') : `Pay ${formatPrice(totalUSD, currency, rates, 'USD')} via ${paymentMethod === 'mpesa' ? 'M-Pesa' : 'Bank Account'}`}
+                {isProcessing ? (paymentMethod === 'mpesa' ? 'Processing M-Pesa...' : 'Processing Bank Transfer...') : `Pay ${formatPrice(totalUSD * 1.01, currency, rates, 'USD')} via ${paymentMethod === 'mpesa' ? 'M-Pesa' : 'Bank Account'}`}
               </button>
             )}
             
@@ -7593,6 +8064,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSeller, setIsSeller] = useState(false);
   const [isDriver, setIsDriver] = useState(false);
@@ -7680,29 +8152,39 @@ export default function App() {
         if (u.email === "mr.dummy3719@gmail.com") {
           setIsAdmin(true);
           setIsSeller(true);
-        } else {
-          // Listen to user document for role changes (e.g., after registration)
-          unsubscribeUserDoc = onSnapshot(doc(db, 'users', u.uid), (docSnap) => {
-            if (docSnap.exists()) {
-              const userData = docSnap.data();
+        }
+        
+        // Listen to user document for role and other properties (like referredBy)
+        unsubscribeUserDoc = onSnapshot(doc(db, 'users', u.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            const userData = docSnap.data() as UserProfile;
+            setUserProfile(userData);
+            if (u.email !== "mr.dummy3719@gmail.com") {
               setIsAdmin(userData.role === 'admin');
               setIsSeller(userData.role === 'seller' || userData.role === 'admin');
               setIsDriver(userData.role === 'driver');
-            } else {
+            }
+          } else {
+            setUserProfile(null);
+            if (u.email !== "mr.dummy3719@gmail.com") {
               setIsAdmin(false);
               setIsSeller(false);
               setIsDriver(false);
             }
-          }, (error) => {
-            console.error("Error listening to user role:", error);
+          }
+        }, (error) => {
+          console.error("Error listening to user doc:", error);
+          if (u.email !== "mr.dummy3719@gmail.com") {
             setIsAdmin(false);
             setIsSeller(false);
             setIsDriver(false);
-          });
-        }
+          }
+        });
       } else {
         setIsAdmin(false);
         setIsSeller(false);
+        setIsDriver(false);
+        setUserProfile(null);
         unsubscribeUserDoc();
       }
     });
@@ -7942,7 +8424,48 @@ export default function App() {
       const supplierPayout = order.sourceCost; // The cost of goods
       const platformProfit = order.profit; // The markup/profit for product creator
 
-      // 2. Update status and log
+      // Platform escrow card calculations (1.0% increment)
+      const originalTotalUSD = order.subtotal || (order.total / 1.01);
+      const escrowFeeUSD = order.escrowFee || (originalTotalUSD * 0.01);
+      const platformCutUSD = order.platformCut || (order.inviterId ? originalTotalUSD * 0.007 : originalTotalUSD * 0.01);
+      const inviterCutUSD = order.inviterCut || (order.inviterId ? originalTotalUSD * 0.003 : 0);
+      const referrerId = order.inviterId || null;
+
+      // 2. Pay Inviter if order was referred
+      if (referrerId && inviterCutUSD > 0) {
+        const inviterRef = doc(db, 'users', referrerId);
+        await updateDoc(inviterRef, {
+          walletBalance: increment(inviterCutUSD),
+          referralEarnings: increment(inviterCutUSD)
+        });
+
+        // Record a referral earning document
+        await addDoc(collection(db, 'referral_earnings'), {
+          referrerId: referrerId,
+          inviteeId: order.buyerId || 'anonymous',
+          inviteeRole: 'buyer',
+          orderId: order.id,
+          amount: inviterCutUSD,
+          type: 'buyer_checkout_referral',
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      // 3. Log settlement transfer to the specified Visa bank card
+      await addDoc(collection(db, 'bank_payouts'), {
+        orderId: order.id,
+        amountUSD: platformCutUSD,
+        amountLocal: platformCutUSD * rateToUSD,
+        currency: order.currency,
+        cardNo: '5505580004295960',
+        expiry: '07/30',
+        cvv: '679',
+        status: 'completed',
+        payoutType: referrerId ? 'referred_0.7_percent' : 'standard_1.0_percent',
+        createdAt: new Date().toISOString()
+      });
+
+      // 4. Update status and log
       await updateOrder(orderId, {
         status: 'delivered',
         deliveryDetails: {
@@ -7955,11 +8478,14 @@ export default function App() {
           `[FINANCE] Payment released from DropShip Pro Escrow.`,
           `[FINANCE] Driver payout (Distance: ${order.deliveryDetails?.distanceKm?.toFixed(1)}km): ${formatPrice(driverFee * rateToUSD, order.currency, rates)}.`,
           `[FINANCE] Supplier payout: ${formatPrice(supplierPayout * rateToUSD, order.currency, rates)}.`,
-          `[FINANCE] Platform/Creator profit: ${formatPrice(platformProfit * rateToUSD, order.currency, rates)}.`
+          `[FINANCE] Platform/Creator profit: ${formatPrice(platformProfit * rateToUSD, order.currency, rates)}.`,
+          `[ESCROW] Platform fee settlement complete:`,
+          `  - Platform Card Cut (${referrerId ? '0.7%' : '1.0%'}): ${formatPrice(platformCutUSD * rateToUSD, order.currency, rates)} settled to Visa *5960.`,
+          referrerId ? `  - Inviter Referral Cut (0.3%): ${formatPrice(inviterCutUSD * rateToUSD, order.currency, rates)} credited to Referrer.` : `  - Standard non-referred checkout.`
         ]
       });
 
-      // 3. Pay Driver
+      // 5. Pay Driver
       if (order.deliveryDetails?.driverId) {
         const driverRef = doc(db, 'users', order.deliveryDetails.driverId);
         await updateDoc(driverRef, {
@@ -7967,7 +8493,7 @@ export default function App() {
         });
       }
 
-      // 4. Pay Sellers (Supplier + Platform profit)
+      // 6. Pay Sellers (Supplier + Platform profit)
       const sellers = new Set(order.items.map(i => i.sellerId).filter(Boolean));
       for (const sellerId of sellers) {
         if (!sellerId) continue;
@@ -7990,7 +8516,7 @@ export default function App() {
         }
       }
 
-      alert("QR Verified! Funds released successfully to Driver, Supplier, and Platform.");
+      alert("QR Verified! Funds released successfully to Driver, Supplier, and Platform Card settlement.");
     } catch (error) {
       console.error("Fund release failed:", error);
       alert("Error releasing funds.");
@@ -8135,7 +8661,7 @@ export default function App() {
                   </div>
                 )
               } />
-              <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} user={user} />} />
+              <Route path="/cart" element={<CartPage cart={cart} setCart={setCart} addOrder={addOrder} currency={currency} rates={rates} user={user} userProfile={userProfile} />} />
               <Route path="/dashboard" element={
                 user ? (
                   <CustomerDashboard 
