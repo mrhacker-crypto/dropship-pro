@@ -1808,7 +1808,7 @@ const AuthModal = ({
           {!isLogin && (
             <div>
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Account Type</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setRole('buyer')}
@@ -1831,210 +1831,6 @@ const AuthModal = ({
                   <Store className="w-4 h-4" />
                   <span className="text-[10px]">Seller</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setRole('driver')}
-                  className={cn(
-                    "py-3 rounded-xl font-bold border-2 transition-all flex flex-col items-center justify-center gap-1",
-                    role === 'driver' ? "border-indigo-600 bg-indigo-50 text-indigo-600" : "border-gray-100 text-gray-400 hover:border-gray-200"
-                  )}
-                >
-                  <Truck className="w-4 h-4" />
-                  <span className="text-[10px]">Driver</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isLogin && role === 'driver' && (
-            <div className="space-y-4 pt-4 border-t border-gray-100">
-              <div className="flex items-center gap-2 text-indigo-600 mb-2">
-                <ShieldCheck className="w-5 h-5" />
-                <span className="text-sm font-bold">Driver Security Verification</span>
-              </div>
-              
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Phone Number</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                  placeholder="+255..."
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">National ID / NIDA</label>
-                <input
-                  type="text"
-                  value={nationalId}
-                  onChange={(e) => {
-                    setNationalId(e.target.value);
-                    setDriverVerification(prev => ({ ...prev, nidaNumber: e.target.value }));
-                  }}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                  placeholder="ID Number"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Selfie Photo</label>
-                  <label className="flex items-center justify-center p-4 border-2 border-dashed border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
-                    {driverVerification.selfieUrl ? (
-                      <CheckCircle2 className="w-6 h-6 text-green-500" />
-                    ) : (
-                      <Camera className="w-6 h-6 text-gray-400" />
-                    )}
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => setDriverVerification(prev => ({ ...prev, selfieUrl: reader.result as string }));
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">License Photo</label>
-                  <label className="flex items-center justify-center p-4 border-2 border-dashed border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
-                    {driverVerification.licenseUrl ? (
-                      <CheckCircle2 className="w-6 h-6 text-green-500" />
-                    ) : (
-                      <FileText className="w-6 h-6 text-gray-400" />
-                    )}
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => setDriverVerification(prev => ({ ...prev, licenseUrl: reader.result as string }));
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Birth Certificate Scan</label>
-                <label className="flex items-center justify-center p-4 border-2 border-dashed border-gray-100 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
-                  {driverVerification.birthCertUrl ? (
-                    <div className="flex items-center gap-2 text-green-500 font-bold text-xs">
-                      <CheckCircle2 className="w-5 h-5" />
-                      Document Uploaded
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-gray-400 font-bold text-xs">
-                      <Plus className="w-5 h-5" />
-                      Select Birth Certificate
-                    </div>
-                  )}
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => setDriverVerification(prev => ({ ...prev, birthCertUrl: reader.result as string }));
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Vehicle Plate</label>
-                  <input
-                    type="text"
-                    value={vehicleInfo.plateNumber}
-                    onChange={(e) => setVehicleInfo({...vehicleInfo, plateNumber: e.target.value})}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                    placeholder="T 123 ABC"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Vehicle Type</label>
-                  <select
-                    value={vehicleInfo.type}
-                    onChange={(e) => setVehicleInfo({...vehicleInfo, type: e.target.value})}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-xs"
-                  >
-                    <option>Motorcycle</option>
-                    <option>Bajaj</option>
-                    <option>Small Car</option>
-                    <option>Van</option>
-                    <option>Truck</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Model</label>
-                  <input
-                    type="text"
-                    value={vehicleInfo.model}
-                    onChange={(e) => setVehicleInfo({...vehicleInfo, model: e.target.value})}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                    placeholder="Suzuki Carry"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Color</label>
-                  <input
-                    type="text"
-                    value={vehicleInfo.color}
-                    onChange={(e) => setVehicleInfo({...vehicleInfo, color: e.target.value})}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                    placeholder="White"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
-                <div className="flex items-center gap-2 text-orange-600 mb-2">
-                  <CreditCard className="w-4 h-4" />
-                  <span className="text-xs font-bold">Payout Account</span>
-                </div>
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    value={bankAccount.bankName}
-                    onChange={(e) => setBankAccount({...bankAccount, bankName: e.target.value})}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-100 outline-none"
-                    placeholder="Bank Name (e.g. CRDB, NMB)"
-                    required
-                  />
-                  <input
-                    type="text"
-                    value={bankAccount.accountNumber}
-                    onChange={(e) => setBankAccount({...bankAccount, accountNumber: e.target.value})}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-100 outline-none"
-                    placeholder="Account Number"
-                    required
-                  />
-                </div>
-                <p className="text-[10px] text-gray-400 mt-2 italic">This account will be charged if reported for theft or lost goods.</p>
               </div>
             </div>
           )}
@@ -2961,11 +2757,93 @@ const SellerDashboard = ({
 
   const handleConfirmAvailability = async (orderId: string) => {
     try {
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
+
+      // Get Bolt API credentials from settings
+      let boltPhone = '';
+      let boltToken = '';
+      let boltBillingId = '';
+      let boltVehicleClass = 'Bolt Boda';
+      let boltAutoDispatch = true;
+
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'bolt_credentials'));
+        if (snap.exists()) {
+          const data = snap.data();
+          boltPhone = data.phone || '';
+          boltToken = data.token || '';
+          boltBillingId = data.billingId || '';
+          boltVehicleClass = data.vehicleClass || 'Bolt Boda';
+          boltAutoDispatch = data.autoDispatch !== false;
+        }
+      } catch (err) {
+        console.warn("Could not read Bolt credentials from Firestore:", err);
+      }
+
+      // Update local status first
       await updateDoc(doc(db, 'orders', orderId), { 
         status: 'availability_confirmed',
-        automationLog: arrayUnion(`[SUPPLIER] Availability confirmed. Order is now ready for driver pickup.`)
+        automationLog: arrayUnion(`[SUPPLIER] Availability confirmed. Scheduling automated Bolt Rider dispatch...`)
       });
-      alert("Availability confirmed! Nearby drivers will be notified.");
+
+      if (boltAutoDispatch) {
+        // Dispatch Bolt Rider
+        const res = await fetch('/api/bolt/dispatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            sellerLat: user?.location?.lat || -6.8183,
+            sellerLng: user?.location?.lng || 39.2789,
+            customerLat: order.customer?.lat || -6.8235,
+            customerLng: order.customer?.lng || 39.2848,
+            phone: boltPhone,
+            token: boltToken,
+            driverCategory: boltVehicleClass
+          })
+        });
+
+        if (res.ok) {
+          const dispatchData = await res.json();
+          if (dispatchData.success) {
+            // Update order with dispatcher details
+            const tripId = dispatchData.tripId;
+            const etaMinutes = dispatchData.etaMinutes;
+            const driverName = dispatchData.driverName;
+            const driverPhone = dispatchData.driverPhone;
+            const vehicleInfo = dispatchData.vehicleInfo;
+
+            await updateDoc(doc(db, 'orders', orderId), {
+              status: 'picked_up', // Transition automatically to picked_up (Rider on the way / picked up)
+              confirmationCode: tripId,
+              deliveryDetails: {
+                driverName,
+                driverPhone,
+                vehicleInfo,
+                offeredAt: new Date().toISOString(),
+                acceptedAt: new Date().toISOString(),
+                pickupLocation: user?.displayName || 'Seller Hub',
+                distanceKm: 2.4, // estimated mock distance
+                deliveryFee: 3500, // estimated mock fee
+                etaMinutes
+              },
+              automationLog: arrayUnion(
+                `[BOLT AGENT] Dispatch successful. Bolt Trip Created: ${tripId}`,
+                `[BOLT AGENT] Assigned Rider: ${driverName} (${driverPhone}) riding a ${vehicleInfo}`,
+                `[BOLT AGENT] Estimated ETA to pickup: ${etaMinutes} minutes.`
+              )
+            });
+            alert(`Availability confirmed! Bolt Courier ${driverName} (${vehicleInfo}) has been automatically dispatched and is on the way.`);
+            return;
+          }
+        }
+        
+        // If API fails or auto dispatch is off, show a standard alert
+        alert("Availability confirmed! Order is staged for courier pickup.");
+      } else {
+        alert("Availability confirmed! Order marked as ready for pickup.");
+      }
     } catch (error) {
       console.error("Failed to confirm availability:", error);
     }
@@ -3336,12 +3214,7 @@ const Navbar = ({
               <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Merchant Portal</Link>
             )}
 
-            {isDriver && (
-              <Link to="/driver" className="text-sm font-medium text-green-600 hover:text-green-700 transition-colors flex items-center gap-1">
-                <Truck className="w-4 h-4" />
-                Driver Portal
-              </Link>
-            )}
+
 
             {isSeller && (
               <Link to="/seller" className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1">
@@ -3562,12 +3435,7 @@ const Navbar = ({
                   <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-gray-900 hover:text-indigo-600">Merchant Portal</Link>
                 )}
 
-                {isDriver && (
-                  <Link to="/driver" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-green-600 hover:text-green-700 flex items-center gap-2">
-                    <Truck className="w-5 h-5" />
-                    Driver Portal
-                  </Link>
-                )}
+
 
                 {isSeller && (
                   <Link to="/seller" onClick={() => setIsMobileMenuOpen(false)} className="block text-lg font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
@@ -5126,8 +4994,55 @@ const AdminPanel = ({
   });
   const [importPreview, setImportPreview] = useState<Product | null>(null);
   const [bulkResults, setBulkResults] = useState<{url: string, status: 'success' | 'error', message?: string}[]>([]);
-  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'fulfillment' | 'tracking' | 'messages' | 'payouts'>('overview');
+  const [tab, setTab] = useState<'overview' | 'inventory' | 'scraper' | 'approval' | 'orders' | 'fulfillment' | 'tracking' | 'messages' | 'payouts' | 'bolt'>('overview');
   const [approvalSubTab, setApprovalSubTab] = useState<'pending' | 'approved'>('pending');
+
+  const [boltPhone, setBoltPhone] = useState('');
+  const [boltToken, setBoltToken] = useState('');
+  const [boltBillingId, setBoltBillingId] = useState('');
+  const [boltVehicleClass, setBoltVehicleClass] = useState('Bolt Boda');
+  const [boltAutoDispatch, setBoltAutoDispatch] = useState(true);
+  const [boltLoading, setBoltLoading] = useState(false);
+
+  useEffect(() => {
+    const loadBoltSettings = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'bolt_credentials'));
+        if (snap.exists()) {
+          const data = snap.data();
+          setBoltPhone(data.phone || '');
+          setBoltToken(data.token || '');
+          setBoltBillingId(data.billingId || '');
+          setBoltVehicleClass(data.vehicleClass || 'Bolt Boda');
+          setBoltAutoDispatch(data.autoDispatch !== false);
+        }
+      } catch (e) {
+        console.warn("Failed to load Bolt settings:", e);
+      }
+    };
+    loadBoltSettings();
+  }, []);
+
+  const handleSaveBoltSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBoltLoading(true);
+    try {
+      await setDoc(doc(db, 'settings', 'bolt_credentials'), {
+        phone: boltPhone,
+        token: boltToken,
+        billingId: boltBillingId,
+        vehicleClass: boltVehicleClass,
+        autoDispatch: boltAutoDispatch,
+        updatedAt: new Date().toISOString()
+      });
+      alert("Bolt API Credentials & Agent Settings updated successfully!");
+    } catch (err) {
+      console.error("Failed to save Bolt settings:", err);
+      alert("Error saving Bolt credentials: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setBoltLoading(false);
+    }
+  };
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
 
@@ -5427,6 +5342,13 @@ const AdminPanel = ({
           >
             <CreditCard className="w-4 h-4 text-indigo-500" />
             Platform Payouts
+          </button>
+          <button 
+            onClick={() => setTab('bolt')}
+            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5", tab === 'bolt' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-500")}
+          >
+            <Truck className="w-4 h-4 text-green-500" />
+            Bolt Agent
           </button>
         </div>
       </div>
@@ -7169,6 +7091,144 @@ const AdminPanel = ({
         </motion.div>
       )}
 
+      {tab === 'bolt' && (
+        <motion.div 
+          key="bolt"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="space-y-8"
+        >
+          <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
+                <Truck className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-gray-900 tracking-tight">Bolt Agent Integration</h3>
+                <p className="text-xs text-gray-400">Configure your Bolt corporate API credentials. The system will book and coordinate deliveries using your account.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveBoltSettings} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Bolt Account Phone</label>
+                  <input 
+                    type="tel"
+                    value={boltPhone}
+                    onChange={(e) => setBoltPhone(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    placeholder="+255 712 345 678"
+                    required
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1 italic">Phone number associated with your Bolt corporate/business panel.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Developer API / OAuth Token</label>
+                  <input 
+                    type="password"
+                    value={boltToken}
+                    onChange={(e) => setBoltToken(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    placeholder="••••••••••••••••••••"
+                    required
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1 italic">Secure OAuth access token retrieved from your Bolt developer portal.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Corporate Billing Reference</label>
+                  <input 
+                    type="text"
+                    value={boltBillingId}
+                    onChange={(e) => setBoltBillingId(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    placeholder="ACC-9983-VISA"
+                    required
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1 italic">Corporate billing reference or credit card authorization code.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Default Bolt Courier Class</label>
+                  <select 
+                    value={boltVehicleClass}
+                    onChange={(e) => setBoltVehicleClass(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  >
+                    <option value="Bolt Boda">Bolt Boda (Motorcycle - Fastest)</option>
+                    <option value="Bolt Delivery">Bolt Delivery (Light Courier)</option>
+                    <option value="Bolt XL">Bolt XL (Large Packages / Bajaj / Small Van)</option>
+                  </select>
+                  <p className="text-[10px] text-gray-400 mt-1 italic">Default vehicle type to pre-select for automated courier dispatch.</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-green-50 rounded-2xl border border-green-100 flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-green-900">Automatic Courier Dispatch Agent</span>
+                  <p className="text-[10px] text-green-700 leading-tight">When suppliers confirm availability, automatically book a Bolt rider and alert the customer.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={boltAutoDispatch}
+                    onChange={(e) => setBoltAutoDispatch(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                </label>
+              </div>
+
+              <button 
+                type="submit"
+                disabled={boltLoading}
+                className="px-6 py-3 bg-green-600 text-white font-bold rounded-2xl hover:bg-green-700 transition-all flex items-center gap-2 text-sm shadow-lg shadow-green-100 disabled:opacity-50"
+              >
+                {boltLoading ? "Connecting & Saving API Handshake..." : "Save Credentials & Enable Agent"}
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-50">
+              <h3 className="text-lg font-black text-gray-900 tracking-tight">Active Bolt Dispatch Logs</h3>
+              <p className="text-xs text-gray-400">Real-time API courier connections mapped by order transactions.</p>
+            </div>
+            <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
+              {orders.filter(o => o.deliveryDetails?.driverName && o.status !== 'delivered').length === 0 ? (
+                <div className="p-12 text-center text-gray-400 italic text-sm">
+                  No active Bolt dispatch agents currently on transit.
+                </div>
+              ) : (
+                orders.filter(o => o.deliveryDetails?.driverName && o.status !== 'delivered').map(order => (
+                  <div key={order.id} className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-gray-50/50 transition-colors">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-mono font-bold text-gray-400">#{order.id.slice(0, 8)}</span>
+                        <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">
+                          On Transit
+                        </span>
+                      </div>
+                      <div className="text-sm font-bold text-gray-900">Rider: {order.deliveryDetails?.driverName}</div>
+                      <div className="text-xs text-gray-500 font-mono">Trip ID: {order.confirmationCode || "BLT-PENDING"} • {order.deliveryDetails?.vehicleInfo}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-bold text-gray-900">Destination: {order.customer.city}</div>
+                      <div className="text-[10px] text-gray-400 italic">Dispatched via Corporate Account</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {importPreview && (
         <ProductModal
           product={importPreview}
@@ -8622,25 +8682,20 @@ export default function App() {
                 )
               } />
               <Route path="/driver" element={
-                isDriver ? (
-                  <DriverDashboard 
-                    user={user}
-                    orders={orders}
-                    updateOrder={updateOrder}
-                    currency={currency}
-                    rates={rates}
-                    awardReferralCommission={awardReferralCommission}
-                  />
-                ) : (
-                  <div className="min-h-[60vh] flex items-center justify-center">
-                    <div className="text-center">
-                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                      <h2 className="text-xl font-bold mb-2">Access Denied</h2>
-                      <p className="text-gray-500 mb-6">You must be a registered driver to access the Driver Portal.</p>
-                      <Link to="/" className="text-indigo-600 font-bold">Return to Store</Link>
+                <div className="min-h-[60vh] flex items-center justify-center p-4">
+                  <div className="max-w-md w-full text-center bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                    <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center text-green-600 mx-auto mb-6">
+                      <Truck className="w-8 h-8" />
                     </div>
+                    <h2 className="text-2xl font-black text-gray-900 tracking-tight mb-3">Bolt Integrated Logistics</h2>
+                    <p className="text-gray-500 text-sm leading-relaxed mb-6">
+                      We have fully migrated our logistics network to <strong>Bolt Couriers</strong>. Delivery agents are now dispatched automatically via Bolt's corporate system.
+                    </p>
+                    <Link to="/" className="inline-flex justify-center items-center px-6 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all text-sm shadow-lg shadow-indigo-100">
+                      Go to Storefront
+                    </Link>
                   </div>
-                )
+                </div>
               } />
               <Route path="/referrals" element={
                 user ? (

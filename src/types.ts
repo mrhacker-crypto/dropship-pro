@@ -97,6 +97,10 @@ export interface UserProfile {
     lng: number;
     address?: string;
   };
+  latitude?: number;
+  longitude?: number;
+  businessName?: string;
+  name?: string;
   isActive?: boolean;
 }
 
@@ -143,6 +147,8 @@ export interface Order {
     dropoffLng?: number;
     distanceKm?: number;
     deliveryFee?: number;
+    vehicleInfo?: string;
+    etaMinutes?: number;
   };
   referralCommission?: number;
   ownerProfit?: number;
